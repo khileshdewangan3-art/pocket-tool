@@ -85,10 +85,22 @@ class MainActivity : Activity() {
         wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
         wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
-        wc.addView(button("PASSWORD GUESSING DEMO • OFFLINE") { showPasswordGuessDemo() })
+        wc.addView(button("PASSWORD SECURITY LAB • 1–15 DIGITS") { showPasswordGuessDemo() })
         wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
+
+        heading("Cybersecurity & device tools")
+        val tools = card()
+        tools.addView(button("WI-FI ANALYZER") { showWifiAnalyzer() })
+        tools.addView(button("NETWORK DIAGNOSTICS") { showNetworkDiagnostics() })
+        tools.addView(button("BLE GATT EXPLORER") { showBleGuide() })
+        tools.addView(button("DEVICE SECURITY CHECK") { showDeviceSecurity() })
+        tools.addView(button("NFC TAG READER CHECK") { showNfcInfo() })
+        tools.addView(button("SUB-GHz RADIO LEARNING") { showSubGhzLab() })
+        tools.addView(button("OPEN NFC SETTINGS") { startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS)) })
+        tools.addView(label("NFC reading needs NFC hardware. Sub-GHz tools are educational only; phone hardware may not support radio transmission."))
+        body.addView(tools)
         status = label("Ready • Offline utility")
         body.addView(status)
     }
@@ -161,46 +173,76 @@ class MainActivity : Activity() {
     }
 
     private fun showPasswordGuessDemo() {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(8), dp(20), 0)
-        }
-        panel.addView(label("Enter a sample 4-digit PIN (not your real Wi-Fi password). The app will try 0000–9999 locally on this phone. No network connection or router access is used."))
-        val pin = EditText(this).apply {
-            hint = "Sample PIN, e.g. 0427"
-            inputType = 2
-            setText("0427")
-            filters = arrayOf(android.text.InputFilter.LengthFilter(4))
-        }
-        panel.addView(pin)
-        val output = label("Demo ready.")
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), 0) }
+        panel.addView(label("Choose a sample numeric PIN length. This calculator estimates the search space only; it does not run billions of guesses or contact any network."))
+        val length = SeekBar(this).apply { max = 14; progress = 3 }
+        val chosen = label("PIN length: 4 digits")
+        panel.addView(chosen); panel.addView(length)
+        val output = label("10,000 possible combinations")
         panel.addView(output)
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Offline Password Guessing Demo")
-            .setView(panel)
-            .setNegativeButton("CLOSE", null)
-            .setPositiveButton("RUN LOCAL DEMO", null)
-            .create()
-        dialog.setOnShowListener {
-            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                val target = pin.text.toString()
-                if (!target.matches(Regex("\\d{4}"))) {
-                    output.text = "Please enter exactly 4 digits."
-                    return@setOnClickListener
+        length.setOnSeekBarChangeListener(object: android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seek: SeekBar?, progress: Int, fromUser: Boolean) {
+                val n = progress + 1
+                chosen.text = "PIN length: $n digits"
+                val combinations = java.math.BigInteger.TEN.pow(n)
+                val seconds = combinations.toDouble() / 1_000_000.0
+                val time = when {
+                    seconds < 60 -> "%.2f seconds".format(seconds)
+                    seconds < 3600 -> "%.1f minutes".format(seconds / 60)
+                    seconds < 86400 -> "%.1f hours".format(seconds / 3600)
+                    seconds < 31557600 -> "%.1f days".format(seconds / 86400)
+                    else -> "%.1f years".format(seconds / 31557600)
                 }
-                var attempts = 0
-                var found = false
-                for (candidate in 0..9999) {
-                    attempts++
-                    if (candidate.toString().padStart(4, '0') == target) {
-                        found = true
-                        break
-                    }
-                }
-                output.text = "SIMULATION COMPLETE\\nResult: ${if (found) "PIN found" else "Not found"}\\nAttempts: $attempts / 10,000\\nMethod: sequential local guesses\\n\\nLearning: short numeric PINs have a small search space. Use long, unique passphrases and WPA2-AES/WPA3.\\n\\nThis is only a local toy demonstration; it does not test Wi-Fi, send packets, or attempt router login."
+                output.text = "Possible combinations: $combinations\\nAt hypothetical 1,000,000 guesses/sec: $time\\nAverage search: about half this time. Real systems add rate limits and cryptographic protections."
             }
+            override fun onStartTrackingTouch(seek: SeekBar?) {}
+            override fun onStopTrackingTouch(seek: SeekBar?) {}
+        })
+        android.app.AlertDialog.Builder(this).setTitle("Password Security Lab").setView(panel).setPositiveButton("CLOSE", null).show()
+    }
+
+    private fun showWifiAnalyzer() {
+        val networks = try { (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager).scanResults } catch (_: Exception) { emptyList<WifiResult>() }
+        if (networks.isEmpty()) { details("Wi-Fi Analyzer", "Pehle SCAN NEARBY WI-FI chalayein. Android scan limits apply."); return }
+        val report = networks.groupBy { it.frequency }.entries.sortedBy { it.key }.joinToString("\\n") { (freq, entries) ->
+            val avg = entries.map { it.level }.average().toInt()
+            val band = if (freq < 2500) "2.4 GHz" else if (freq < 5900) "5 GHz" else "6 GHz"
+            "$freq MHz ($band): ${entries.size} network(s), average signal $avg dBm"
         }
-        dialog.show()
+        val strongest = networks.maxByOrNull { it.level }
+        details("Wi-Fi Analyzer", "Networks found: ${networks.size}\\nStrongest: ${strongest?.SSID ?: "Hidden"} (${strongest?.level} dBm)\\n\\nChannel/frequency overview:\\n$report\\n\\nTip: 2.4 GHz channels 1, 6, 11 are commonly preferred when choosing a less crowded channel.")
+    }
+
+    @Suppress("DEPRECATION")
+    private fun showNetworkDiagnostics() {
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val info = wm.connectionInfo
+            val dhcp = wm.dhcpInfo
+            val connected = info != null && info.networkId != -1
+            details("Network Diagnostics", "Wi-Fi connected: $connected\\nSSID: ${info?.ssid ?: "Unavailable"}\\nPhone IP: ${info?.ipAddress?.let { "%d.%d.%d.%d".format(it and 255, it shr 8 and 255, it shr 16 and 255, it shr 24 and 255) } ?: "Unavailable"}\\nGateway: ${dhcp?.gateway ?: 0} (integer form)\\nDNS 1: ${dhcp?.dns1 ?: 0}\\nDNS 2: ${dhcp?.dns2 ?: 0}\\n\\nFor full readable IP details use MY CONNECTED WI-FI DETAILS.")
+        } catch (_: Exception) { toast("Diagnostics unavailable; check permissions.") }
+    }
+
+    private fun showBleGuide() {
+        details("BLE GATT Explorer", "1. Start Bluetooth LE scan.\\n2. Select a connectable device and tap CONNECT.\\n3. GATT services and characteristics can be inspected on supported devices.\\n\\nOnly inspect devices you own or have permission to test. Some devices require pairing or an app-specific protocol.")
+    }
+
+    private fun showDeviceSecurity() {
+        details("Device Security Check", "Android security checklist:\\n• Keep Android security updates current.\\n• Use a screen lock and biometrics.\\n• Review app permissions in Settings.\\n• Install apps from trusted sources.\\n• Keep Google Play Protect enabled.\\n• Avoid unknown USB debugging connections.\\n• Use Find My Device.\\n\\nThis is an educational checklist, not a malware scan.")
+    }
+
+    private fun showNfcInfo() {
+        val adapter = android.nfc.NfcAdapter.getDefaultAdapter(this)
+        details("NFC Tag Reader", when {
+            adapter == null -> "This phone does not report NFC hardware. NFC tag reading is unavailable."
+            !adapter.isEnabled -> "NFC hardware is available but NFC is OFF. Enable it in Settings."
+            else -> "NFC hardware is available and enabled. Bring a compatible NFC tag near the phone's NFC antenna. Reading depends on Android tag support and tag type."
+        })
+    }
+
+    private fun showSubGhzLab() {
+        details("Sub-GHz Radio Learning", "Sub-GHz commonly refers to radio bands below 1 GHz, such as 315, 433, 868 and 915 MHz.\\n\\nLearn these concepts:\\n• Frequency and wavelength\\n• Amplitude/frequency modulation (ASK/OOK/FSK)\\n• Legal regional frequency and power limits\\n• Why rolling codes protect modern remotes\\n\\nMost phones do not contain a Sub-GHz transceiver. This app provides education only; it does not capture, clone or transmit access-control signals.")
     }
 
     private fun showWifiSecurityLab() {
