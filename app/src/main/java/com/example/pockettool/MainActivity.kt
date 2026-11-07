@@ -86,6 +86,7 @@ class MainActivity : Activity() {
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
         wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
         wc.addView(button("PASSWORD SECURITY LAB • 1–15 DIGITS") { showPasswordGuessDemo() })
+        wc.addView(button("WI-FI PASSWORD AUDIT") { showPasswordAudit("Wi-Fi") })
         wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
@@ -95,6 +96,7 @@ class MainActivity : Activity() {
         tools.addView(button("WI-FI ANALYZER") { showWifiAnalyzer() })
         tools.addView(button("NETWORK DIAGNOSTICS") { showNetworkDiagnostics() })
         tools.addView(button("BLE GATT EXPLORER") { showBleGuide() })
+        tools.addView(button("BLUETOOTH PAIRING PASSWORD AUDIT") { showPasswordAudit("Bluetooth") })
         tools.addView(button("DEVICE SECURITY CHECK") { showDeviceSecurity() })
         tools.addView(button("NFC TAG READER CHECK") { showNfcInfo() })
         tools.addView(button("SUB-GHz RADIO LEARNING") { showSubGhzLab() })
@@ -170,6 +172,60 @@ class MainActivity : Activity() {
             })
             if(g!=null) { gatts.add(g); status.text="Connecting to ${device.address}…" }
         } catch (_: Exception) { toast("Connection nahi ho paya; device connectable hona chahiye") }
+    }
+
+
+    private fun showPasswordAudit(target: String) {
+        val input = EditText(this).apply {
+            hint = if (target == "Wi-Fi") "Apna Wi-Fi password yahan daalein" else "Apna Bluetooth PIN/password yahan daalein"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), 0)
+            addView(label("Offline audit only. Password isi phone par check hoga; app kisi router/device par login ya password guesses nahi bhejega."))
+            addView(input)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("$target Password Audit")
+            .setView(panel)
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("CHECK") { _, _ ->
+                val value = input.text.toString()
+                val result = assessPassword(value, target)
+                details("$target Password Audit", result)
+            }
+            .show()
+    }
+
+    private fun assessPassword(value: String, target: String): String {
+        if (value.isEmpty()) return "Password enter nahi kiya."
+        val length = value.length
+        val lower = value.any { it.isLowerCase() }
+        val upper = value.any { it.isUpperCase() }
+        val digit = value.any { it.isDigit() }
+        val symbol = value.any { !it.isLetterOrDigit() }
+        val variety = listOf(lower, upper, digit, symbol).count { it }
+        val common = setOf("12345678", "password", "password123", "qwerty123", "admin123", "11111111", "00000000")
+        val sequential = value.matches(Regex(".*(0123|1234|2345|3456|4567|5678|6789|9876|8765|7654).*"))
+        val repeated = value.length >= 4 && value.all { it == value.first() }
+        val minimum = if (target == "Wi-Fi") 12 else 8
+        val score = (if (length >= minimum) 2 else 0) + (if (length >= 16) 1 else 0) + variety + (if (!common.contains(value.lowercase())) 1 else 0) - (if (sequential || repeated) 2 else 0)
+        val grade = when {
+            common.contains(value.lowercase()) || length < 6 || repeated -> "VERY WEAK"
+            score <= 3 -> "WEAK"
+            score <= 5 -> "MODERATE"
+            score <= 7 -> "STRONG"
+            else -> "VERY STRONG"
+        }
+        val tips = mutableListOf<String>()
+        if (length < minimum) tips.add("Kam se kam $minimum characters use karein.")
+        if (length < 16) tips.add("16+ characters ka unique passphrase aur behtar hoga.")
+        if (variety < 3) tips.add("Upper/lowercase, numbers aur symbols ka mix rakhein.")
+        if (common.contains(value.lowercase()) || sequential || repeated) tips.add("Common, sequential ya repeated pattern hataayein.")
+        if (tips.isEmpty()) tips.add("Is password ko doosri services par reuse na karein.")
+        return "Target: $target\\nStrength estimate: $grade\\nLength: $length characters\\nCharacter groups: $variety of 4\\n\\nSuggestions:\\n• " + tips.joinToString("\\n• ") + "\\n\\nNote: This is an offline heuristic, not a guarantee against cracking. Bluetooth devices use different pairing methods; Android apps cannot safely or generally automate PIN guesses against them."
     }
 
     private fun showPasswordGuessDemo() {
