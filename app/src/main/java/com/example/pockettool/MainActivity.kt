@@ -130,6 +130,9 @@ class MainActivity : Activity() {
         wc.addView(button("DISCOVER SHARED FILE SERVERS") { discoverFileServices() })
         wc.addView(button("START PHONE FILE SERVER") { startPhoneFileServer() })
         wc.addView(button("STOP PHONE FILE SERVER") { stopPhoneFileServer() })
+        wc.addView(button("START FTP SERVER") { startFtpServer() })
+        wc.addView(button("STOP FTP SERVER") { stopFtpServer() })
+        wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "ftpServerInfo" })
         wc.addView(label("Share folder: PocketToolShare • Same Wi-Fi par apne PC/phone ke browser se link kholo. Upload/download max 50 MB per file."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "phoneShareInfo" })
         wc.addView(label("Finds FTP / SFTP / SMB services advertised by your own phones and computers on the same Wi-Fi. A device must enable file sharing first."))
@@ -174,6 +177,8 @@ class MainActivity : Activity() {
 
 
     private var phoneShareServer: PocketShareServer? = null
+    private var ftpServer: PocketFtpServer? = null
+    private var ftpPassword: String = ""
 
     @Suppress("DEPRECATION")
     private fun startPhoneFileServer() {
@@ -202,12 +207,42 @@ class MainActivity : Activity() {
 
     private fun stopPhoneFileServer() {
         try { phoneShareServer?.stop() } catch (_: Exception) {}
+        try { ftpServer?.stop() } catch (_: Exception) {}
+        ftpServer = null
         phoneShareServer = null
         body.findViewWithTag<LinearLayout>("phoneShareInfo")?.apply {
             removeAllViews()
             addView(label("File server stopped"))
         }
         status.text = "Phone file server stopped"
+    }
+
+    private fun startFtpServer() {
+        if (ftpServer != null) { toast("FTP server already running"); return }
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val v = wm.connectionInfo.ipAddress
+            if (v == 0) { toast("Pehle Wi-Fi connect karein"); return }
+            val ip = "%d.%d.%d.%d".format(v and 255, v shr 8 and 255, v shr 16 and 255, v shr 24 and 255)
+            val folder = java.io.File(getExternalFilesDir(null), "PocketToolFTP")
+            ftpPassword = (100000..999999).random().toString()
+            val server = PocketFtpServer(folder, "pocket", ftpPassword)
+            server.start()
+            ftpServer = server
+            val info = body.findViewWithTag<LinearLayout>("ftpServerInfo") ?: return
+            info.removeAllViews()
+            info.addView(label("FTP SERVER RUNNING\\nHost: $ip\\nPort: 2121\\nUsername: pocket\\nPassword: $ftpPassword\\nFolder: ${folder.absolutePath}\\nUse FileZilla / FTP client on the same trusted Wi-Fi."))
+            info.addView(button("COPY FTP ADDRESS") { copy("ftp://pocket:$ftpPassword@$ip:2121/") })
+            status.text = "FTP server running • $ip:2121"
+            toast("FTP server started")
+        } catch (e: Exception) { ftpServer = null; toast("FTP start failed: ${e.message}") }
+    }
+
+    private fun stopFtpServer() {
+        try { ftpServer?.stop() } catch (_: Exception) {}
+        ftpServer = null
+        body.findViewWithTag<LinearLayout>("ftpServerInfo")?.apply { removeAllViews(); addView(label("FTP server stopped")) }
+        status.text = "FTP server stopped"
     }
 
     private val nsdManager by lazy { getSystemService(Context.NSD_SERVICE) as android.net.nsd.NsdManager }
