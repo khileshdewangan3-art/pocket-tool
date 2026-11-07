@@ -79,6 +79,10 @@ class MainActivity : Activity() {
         heading("Wi-Fi network scanner")
         val wc = card()
         wc.addView(button("MY CONNECTED WI-FI DETAILS") { showConnectedWifi() })
+        wc.addView(button("OPEN WI-FI SETTINGS / SHARE QR") {
+            startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+        })
+        wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
         wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
@@ -152,6 +156,22 @@ class MainActivity : Activity() {
             })
             if(g!=null) { gatts.add(g); status.text="Connecting to ${device.address}…" }
         } catch (_: Exception) { toast("Connection nahi ho paya; device connectable hona chahiye") }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun openRouterPage() {
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val gateway = wm.dhcpInfo.gateway
+            if (gateway == 0) {
+                toast("Router IP nahi mila. Pehle Wi-Fi se connect karein.")
+                return
+            }
+            val ip = "%d.%d.%d.%d".format(gateway and 255, gateway shr 8 and 255, gateway shr 16 and 255, gateway shr 24 and 255)
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("http://$ip")))
+        } catch (_: Exception) {
+            toast("Router page open nahi ho paya")
+        }
     }
 
     @Suppress("DEPRECATION")
