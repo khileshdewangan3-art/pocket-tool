@@ -85,6 +85,7 @@ class MainActivity : Activity() {
         wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
         wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
+        wc.addView(button("PASSWORD GUESSING DEMO • OFFLINE") { showPasswordGuessDemo() })
         wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
@@ -157,6 +158,49 @@ class MainActivity : Activity() {
             })
             if(g!=null) { gatts.add(g); status.text="Connecting to ${device.address}…" }
         } catch (_: Exception) { toast("Connection nahi ho paya; device connectable hona chahiye") }
+    }
+
+    private fun showPasswordGuessDemo() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), 0)
+        }
+        panel.addView(label("Enter a sample 4-digit PIN (not your real Wi-Fi password). The app will try 0000–9999 locally on this phone. No network connection or router access is used."))
+        val pin = EditText(this).apply {
+            hint = "Sample PIN, e.g. 0427"
+            inputType = 2
+            setText("0427")
+            filters = arrayOf(android.text.InputFilter.LengthFilter(4))
+        }
+        panel.addView(pin)
+        val output = label("Demo ready.")
+        panel.addView(output)
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Offline Password Guessing Demo")
+            .setView(panel)
+            .setNegativeButton("CLOSE", null)
+            .setPositiveButton("RUN LOCAL DEMO", null)
+            .create()
+        dialog.setOnShowListener {
+            dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val target = pin.text.toString()
+                if (!target.matches(Regex("\\d{4}"))) {
+                    output.text = "Please enter exactly 4 digits."
+                    return@setOnClickListener
+                }
+                var attempts = 0
+                var found = false
+                for (candidate in 0..9999) {
+                    attempts++
+                    if (candidate.toString().padStart(4, '0') == target) {
+                        found = true
+                        break
+                    }
+                }
+                output.text = "SIMULATION COMPLETE\\nResult: ${if (found) "PIN found" else "Not found"}\\nAttempts: $attempts / 10,000\\nMethod: sequential local guesses\\n\\nLearning: short numeric PINs have a small search space. Use long, unique passphrases and WPA2-AES/WPA3.\\n\\nThis is only a local toy demonstration; it does not test Wi-Fi, send packets, or attempt router login."
+            }
+        }
+        dialog.show()
     }
 
     private fun showWifiSecurityLab() {
