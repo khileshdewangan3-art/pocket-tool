@@ -49,6 +49,7 @@ class MainActivity : Activity() {
             permissions.add(Manifest.permission.BLUETOOTH_SCAN)
             permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
         }
+        if (Build.VERSION.SDK_INT >= 33) permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES)
         requestPermissions(permissions.toTypedArray(), 10)
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,247,250)) }
         page.addView(LinearLayout(this).apply {
