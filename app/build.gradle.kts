@@ -18,3 +18,7 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
 }
+
+dependencies {
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+}
