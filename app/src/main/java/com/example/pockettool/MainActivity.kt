@@ -97,6 +97,10 @@ class MainActivity : Activity() {
         wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
         wc.addView(button("DISCOVER SHARED FILE SERVERS") { discoverFileServices() })
+        wc.addView(button("START PHONE FILE SERVER") { startPhoneFileServer() })
+        wc.addView(button("STOP PHONE FILE SERVER") { stopPhoneFileServer() })
+        wc.addView(label("Share folder: PocketToolShare • Same Wi-Fi par apne PC/phone ke browser se link kholo. Upload/download max 50 MB per file."))
+        wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "phoneShareInfo" })
         wc.addView(label("Finds FTP / SFTP / SMB services advertised by your own phones and computers on the same Wi-Fi. A device must enable file sharing first."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "fileServiceList" })
         wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
@@ -136,6 +140,44 @@ class MainActivity : Activity() {
         body.addView(status)
     }
 
+
+
+    private var phoneShareServer: PocketShareServer? = null
+
+    @Suppress("DEPRECATION")
+    private fun startPhoneFileServer() {
+        if (phoneShareServer != null) { toast("File server already running"); return }
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val ipValue = wm.connectionInfo.ipAddress
+            if (ipValue == 0) { toast("Pehle same Wi-Fi se connect karein"); return }
+            val ip = "%d.%d.%d.%d".format(ipValue and 255, ipValue shr 8 and 255, ipValue shr 16 and 255, ipValue shr 24 and 255)
+            val folder = java.io.File(getExternalFilesDir(null), "PocketToolShare")
+            val server = PocketShareServer(folder)
+            server.start(5000, false)
+            phoneShareServer = server
+            val url = server.shareUrl(ip)
+            val panel = body.findViewWithTag<LinearLayout>("phoneShareInfo") ?: return
+            panel.removeAllViews()
+            panel.addView(label("SERVER RUNNING\\n$url\\nFolder: ${folder.absolutePath}\\nAnyone on your trusted Wi-Fi with this private link can access this folder."))
+            panel.addView(button("COPY SHARE LINK") { copy(url) })
+            status.text = "Phone file server running • $ip:8765"
+            toast("File sharing started")
+        } catch (e: Exception) {
+            phoneShareServer = null
+            toast("Server start nahi hua: ${e.message}")
+        }
+    }
+
+    private fun stopPhoneFileServer() {
+        try { phoneShareServer?.stop() } catch (_: Exception) {}
+        phoneShareServer = null
+        body.findViewWithTag<LinearLayout>("phoneShareInfo")?.apply {
+            removeAllViews()
+            addView(label("File server stopped"))
+        }
+        status.text = "Phone file server stopped"
+    }
 
     private val nsdManager by lazy { getSystemService(Context.NSD_SERVICE) as android.net.nsd.NsdManager }
     private val nsdListeners = mutableListOf<android.net.nsd.NsdManager.DiscoveryListener>()
@@ -692,6 +734,8 @@ class MainActivity : Activity() {
         receiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         nsdListeners.forEach { try { nsdManager.stopServiceDiscovery(it) } catch (_: Exception) {} }
         nsdListeners.clear()
+        try { phoneShareServer?.stop() } catch (_: Exception) {}
+        phoneShareServer = null
         super.onDestroy()
     }
 }
