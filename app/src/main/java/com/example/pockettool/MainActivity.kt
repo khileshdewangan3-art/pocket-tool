@@ -31,9 +31,12 @@ class MainActivity : Activity() {
     private val gatts = mutableListOf<BluetoothGatt>()
     private var scanning = false
     private var receiver: BroadcastReceiver? = null
+    private var importedPasswords: Set<String> = emptySet()
+    private val passwordBundleRequest = 7401
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        actionBar?.hide()
         val permissions = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
         if (Build.VERSION.SDK_INT >= 31) {
             permissions.add(Manifest.permission.BLUETOOTH_SCAN)
@@ -43,7 +46,7 @@ class MainActivity : Activity() {
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,247,250)) }
         page.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(18), dp(20), dp(18))
+            setPadding(dp(18), dp(12), dp(18), dp(12))
             background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
                 intArrayOf(Color.rgb(17, 42, 76), Color.rgb(31, 105, 170))).apply { cornerRadius = dp(0).toFloat() }
             addView(TextView(this@MainActivity).apply {
@@ -119,11 +122,69 @@ class MainActivity : Activity() {
         ethical.addView(button("SHA-256 HASH LAB") { showHashLab() })
         ethical.addView(button("WEB APP SECURITY CHECKLIST") { showWebSecurityChecklist() })
         ethical.addView(button("ETHICAL HACKING ROADMAP") { showEthicalRoadmap() })
+        ethical.addView(button("IMPORT PASSWORD BUNDLE • TXT") { importPasswordBundle() })
+        ethical.addView(button("CHECK MY PASSWORD IN BUNDLE") { checkPasswordAgainstBundle() })
+        ethical.addView(label(if (importedPasswords.isEmpty()) "No password bundle loaded. Import your own .txt wordlist to check whether your own password appears in it." else "Loaded locally: ${importedPasswords.size} unique entries. File is not uploaded or sent to any network."))
         ethical.addView(label("Safe learning tools: own devices, own network and explicitly authorized systems only. No password cracking, stealth scanning or exploitation."))
         body.addView(ethical)
 
         status = label("Ready • Offline utility")
         body.addView(status)
+    }
+
+    private fun importPasswordBundle() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/plain"
+        }
+        try { startActivityForResult(intent, passwordBundleRequest) }
+        catch (_: Exception) { toast("File picker open nahi hua") }
+    }
+
+    @Deprecated("Deprecated by Android; retained for broad device compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            val loaded = linkedSetOf<String>()
+            var totalChars = 0
+            contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    totalChars += line.length
+                    if (totalChars > 2_000_000 || loaded.size >= 50_000) break
+                    if (line.isNotBlank()) loaded.add(line.trim())
+                }
+            } ?: throw IllegalStateException("File read nahi ho paayi")
+            importedPasswords = loaded
+            status.text = "Password bundle loaded • ${loaded.size} unique entries"
+            details("Password Bundle Imported", "Entries loaded: ${loaded.size}\nMaximum: 50,000 lines / 2 MB\n\nThe list stays in app memory only. It is not uploaded and is cleared when the app process closes. Use only your own password list.")
+        } catch (e: Exception) {
+            toast("TXT file read nahi hui: ${e.message ?: "unknown error"}")
+        }
+    }
+
+    private fun checkPasswordAgainstBundle() {
+        if (importedPasswords.isEmpty()) {
+            toast("Pehle apni TXT password bundle import karein")
+            return
+        }
+        val input = EditText(this).apply {
+            hint = "Apna password enter karein"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Check My Password")
+            .setMessage("Ye check sirf phone par imported list se exact match karta hai. Kisi Wi-Fi/router par login attempt nahi hota.")
+            .setView(input).setNegativeButton("CANCEL", null)
+            .setPositiveButton("CHECK") { _, _ ->
+                val candidate = input.text.toString()
+                val found = importedPasswords.contains(candidate)
+                details("Offline Bundle Check",
+                    if (found) "MATCH FOUND\n\nYe password tumhari imported list mein maujood hai. Is password ko use na karein; ek unique passphrase banayein."
+                    else "NO EXACT MATCH\n\nYe password imported list mein exact match nahi hua. Iska matlab password guaranteed secure nahi hai; length, uniqueness aur reuse bhi matter karte hain.\n\nNo network or router was contacted.")
+            }.show()
     }
 
     private fun showMyNetworkAudit() {
@@ -217,7 +278,7 @@ class MainActivity : Activity() {
     private fun button(s: String, action: () -> Unit) = Button(this).apply {
         text = s; textSize = 10f; letterSpacing = 0.01f; isAllCaps = false
         setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE)
-        minHeight = dp(42); minimumHeight = dp(42); setPadding(dp(10), 0, dp(10), 0)
+        minHeight = dp(38); minimumHeight = dp(38); setPadding(dp(10), 0, dp(10), 0)
         background = GradientDrawable().apply {
             setColor(Color.rgb(35, 104, 190)); cornerRadius = dp(10).toFloat()
         }
