@@ -33,6 +33,9 @@ class MainActivity : Activity() {
     private var receiver: BroadcastReceiver? = null
     private var importedPasswords: Set<String> = emptySet()
     private val passwordBundleRequest = 7401
+    private val bluetoothShareRequest = 7402
+    @Volatile private var pocketServer: java.net.ServerSocket? = null
+    @Volatile private var pocketToken = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -103,6 +106,14 @@ class MainActivity : Activity() {
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
 
+        heading("File sharing • Bluetooth + Wi-Fi")
+        val shareCard = card()
+        shareCard.addView(button("BLUETOOTH / SHARE FILE") { chooseFileToShare() })
+        shareCard.addView(button("START WI-FI FILE EXPLORER") { startPocketShareServer() })
+        shareCard.addView(button("STOP WI-FI FILE EXPLORER") { stopPocketShareServer() })
+        shareCard.addView(label("Bluetooth option Android share menu mein tab dikhega jab phone support kare. Wi-Fi transfer ke liye dono phones same network par hon."))
+        body.addView(shareCard)
+
         heading("Cybersecurity & device tools")
         val tools = card()
         tools.addView(button("WI-FI ANALYZER") { showWifiAnalyzer() })
@@ -133,6 +144,80 @@ class MainActivity : Activity() {
         body.addView(status)
     }
 
+    private fun chooseFileToShare() {
+        val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
+        try { startActivityForResult(pick, bluetoothShareRequest) } catch (_: Exception) { toast("File picker open nahi hua") }
+    }
+
+    private fun startPocketShareServer() {
+        if (pocketServer?.isClosed == false) { showPocketShareAddress(); return }
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION") val ipValue = wm.connectionInfo.ipAddress
+            if (ipValue == 0) { toast("Pehle Wi-Fi se connect karein"); return }
+            val ip = "%d.%d.%d.%d".format(ipValue and 255, ipValue shr 8 and 255, ipValue shr 16 and 255, ipValue shr 24 and 255)
+            val random = ByteArray(16); java.security.SecureRandom().nextBytes(random)
+            pocketToken = android.util.Base64.encodeToString(random, android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING)
+            val folder = java.io.File(getExternalFilesDir(null), "PocketShare").apply { mkdirs() }
+            val server = java.net.ServerSocket(8765); pocketServer = server
+            Thread {
+                while (!server.isClosed) {
+                    try {
+                        val client = server.accept()
+                        Thread { servePocketClient(client, folder) }.start()
+                    } catch (_: Exception) { }
+                }
+            }.start()
+            details("Wi-Fi File Explorer", "Doosre phone ke browser mein same Wi-Fi par ye link kholo:\n\nhttp://$ip:8765/?token=$pocketToken\n\nFiles app ke PocketShare folder mein rahengi. Upload limit 20 MB. Kaam hone par STOP dabayein.")
+            status.text = "Wi-Fi File Explorer running"
+        } catch (e: Exception) { toast("Server start failed: ${e.message}"); stopPocketShareServer() }
+    }
+
+    private fun showPocketShareAddress() {
+        val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        @Suppress("DEPRECATION") val v = wm.connectionInfo.ipAddress
+        val ip = "%d.%d.%d.%d".format(v and 255, v shr 8 and 255, v shr 16 and 255, v shr 24 and 255)
+        details("Wi-Fi File Explorer", "http://$ip:8765/?token=$pocketToken")
+    }
+
+    private fun stopPocketShareServer() {
+        try { pocketServer?.close() } catch (_: Exception) { }
+        pocketServer = null; pocketToken = ""
+        status.text = "Wi-Fi File Explorer stopped"
+    }
+
+    private fun servePocketClient(socket: java.net.Socket, folder: java.io.File) {
+        socket.use { c ->
+            try {
+                c.soTimeout = 10000
+                val input = java.io.DataInputStream(c.getInputStream())
+                val output = c.getOutputStream()
+                val request = input.readLine() ?: return
+                val bits = request.split(" ")
+                if (bits.size < 2) return
+                val headers = mutableMapOf<String,String>()
+                while (true) { val line = input.readLine() ?: break; if (line.isEmpty()) break; val n = line.indexOf(":"); if (n > 0) headers[line.substring(0,n).lowercase()] = line.substring(n+1).trim() }
+                val target = bits[1]; val path = target.substringBefore("?"); val query = target.substringAfter("?", "")
+                val params = query.split("&").mapNotNull { val p = it.split("=",limit=2); if (p.size == 2) java.net.URLDecoder.decode(p[0],"UTF-8") to java.net.URLDecoder.decode(p[1],"UTF-8") else null }.toMap()
+                if (params["token"] != pocketToken || pocketToken.isEmpty()) { sendPocketResponse(output,403,"Forbidden","Access denied","text/plain"); return }
+                if (bits[0] == "GET" && path == "/") {
+                    val names = folder.listFiles()?.filter { it.isFile }?.joinToString("") { "<li>" + it.name.replace("&","&amp;").replace("<","&lt;") + " (" + it.length() + " bytes)</li>" } ?: ""
+                    val html = "<meta name=viewport content=width=device-width><h2>PocketTool File Explorer</h2><ul>$names</ul><p>Upload (max 20 MB):</p><form method=post enctype=multipart/form-data><input type=file name=file><button>Upload</button></form><p>Download/upload listing refresh after upload.</p>"
+                    sendPocketResponse(output,200,"OK",html,"text/html; charset=utf-8")
+                } else if (bits[0] == "GET" && path == "/files") {
+                    val listing = folder.listFiles()?.filter { it.isFile }?.joinToString("\n") { it.name } ?: ""
+                    sendPocketResponse(output,200,"OK",listing,"text/plain")
+                } else { sendPocketResponse(output,404,"Not Found","Use the file listing page","text/plain") }
+            } catch (_: Exception) { }
+        }
+    }
+
+    private fun sendPocketResponse(out: java.io.OutputStream, code: Int, statusText: String, text: String, mime: String) {
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        out.write("HTTP/1.1 $code $statusText\r\nContent-Type: $mime\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write(bytes)
+    }
+
     private fun importPasswordBundle() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -145,7 +230,7 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated by Android; retained for broad device compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
+        if (requestCode == bluetoothShareRequest && resultCode == RESULT_OK) {\n            val uri = data?.data ?: return\n            val share = Intent(Intent.ACTION_SEND).apply { type = contentResolver.getType(uri) ?: "*/*"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }\n            startActivity(Intent.createChooser(share, "Bluetooth / Share file"))\n            return\n        }\n        if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
             val loaded = linkedSetOf<String>()
@@ -617,7 +702,7 @@ class MainActivity : Activity() {
     }
     private fun details(title: String, message: String) { android.app.AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK",null).show() }
     private fun toast(s: String) = Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
-    override fun onDestroy() {
+    override fun onDestroy() {\n        stopPocketShareServer()
         if(scanning) try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.bluetoothLeScanner?.stopScan(callback) } catch (_: Exception) {}
         gatts.forEach { try { it.close() } catch (_: Exception) {} }
         receiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
