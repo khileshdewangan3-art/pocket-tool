@@ -124,6 +124,7 @@ class MainActivity : Activity() {
         ethical.addView(button("ETHICAL HACKING ROADMAP") { showEthicalRoadmap() })
         ethical.addView(button("IMPORT PASSWORD BUNDLE • TXT") { importPasswordBundle() })
         ethical.addView(button("CHECK MY PASSWORD IN BUNDLE") { checkPasswordAgainstBundle() })
+        ethical.addView(button("PASSWORD TEST SIMULATOR • OFFLINE") { runPasswordBundleSimulator() })
         ethical.addView(label(if (importedPasswords.isEmpty()) "No password bundle loaded. Import your own .txt wordlist to check whether your own password appears in it." else "Loaded locally: ${importedPasswords.size} unique entries. File is not uploaded or sent to any network."))
         ethical.addView(label("Safe learning tools: own devices, own network and explicitly authorized systems only. No password cracking, stealth scanning or exploitation."))
         body.addView(ethical)
@@ -163,6 +164,65 @@ class MainActivity : Activity() {
         } catch (e: Exception) {
             toast("TXT file read nahi hui: ${e.message ?: "unknown error"}")
         }
+    }
+
+    private fun runPasswordBundleSimulator() {
+        if (importedPasswords.isEmpty()) {
+            toast("Pehle apni TXT password bundle import karein")
+            return
+        }
+        val input = EditText(this).apply {
+            hint = "Apna test password enter karein"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Offline Password Test Simulator")
+            .setMessage("Simulator imported list ko local memory mein line-by-line compare karega. Koi Wi-Fi/router connection ya login attempt nahi hoga.")
+            .setView(input).setNegativeButton("CANCEL", null)
+            .setPositiveButton("START SIMULATION") { _, _ ->
+                val target = input.text.toString()
+                if (target.isEmpty()) { toast("Test password enter karein"); return@setPositiveButton }
+                val entries = importedPasswords.toList()
+                val progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+                    max = entries.size
+                    progress = 0
+                }
+                val message = label("Starting local comparison…")
+                val panel = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(20), dp(12), dp(20), dp(8))
+                    addView(message)
+                    addView(progress)
+                }
+                val dialog = android.app.AlertDialog.Builder(this)
+                    .setTitle("Password Test Simulator")
+                    .setView(panel)
+                    .setNegativeButton("CLOSE", null)
+                    .create()
+                dialog.show()
+                Thread {
+                    var foundAt = -1
+                    for (i in entries.indices) {
+                        if (entries[i] == target) { foundAt = i; break }
+                        if (i % 100 == 0 || i == entries.lastIndex) {
+                            val done = i + 1
+                            runOnUiThread {
+                                if (dialog.isShowing) {
+                                    progress.progress = done
+                                    message.text = "Local comparisons: $done / ${entries.size}"
+                                }
+                            }
+                            try { Thread.sleep(8) } catch (_: InterruptedException) { break }
+                        }
+                    }
+                    val tested = if (foundAt >= 0) foundAt + 1 else entries.size
+                    runOnUiThread {
+                        if (dialog.isShowing) dialog.dismiss()
+                        details("Simulation Complete",
+                            "Entries checked locally: $tested / ${entries.size}\nResult: ${if (foundAt >= 0) "MATCH FOUND" else "NO MATCH"}\n\n${if (foundAt >= 0) "This test password exists in your imported bundle. Do not use it." else "No exact match in this list. This does not prove the password is secure."}\n\nSIMULATION ONLY • No Wi-Fi packets sent • No router login attempts.")
+                    }
+                }.start()
+            }.show()
     }
 
     private fun checkPasswordAgainstBundle() {
