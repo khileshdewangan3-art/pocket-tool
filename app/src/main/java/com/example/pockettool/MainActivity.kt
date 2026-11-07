@@ -320,70 +320,159 @@ class MainActivity : Activity() {
 
     private fun discoverNearbyDevices() {
         try {
+            val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            if (!wifi.isWifiEnabled) {
+                updateNearbyStatus("Wi-Fi OFF hai. Wi-Fi ON karke FIND DEVICES dobara dabayein.")
+                startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+                return
+            }
+            if (Build.VERSION.SDK_INT >= 33 &&
+                checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES), 33)
+                updateNearbyStatus("Nearby devices permission allow karein, phir FIND DEVICES dabayein.")
+                return
+            }
+            if (Build.VERSION.SDK_INT < 33 &&
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), 34)
+                updateNearbyStatus("Location permission allow karein, phir FIND DEVICES dabayein.")
+                return
+            }
             p2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
-            p2pChannel = p2pManager.initialize(this, mainLooper, null)
+            if (p2pChannel == null) p2pChannel = p2pManager.initialize(this, mainLooper) {
+                runOnUiThread { updateNearbyStatus("Wi-Fi Direct channel lost. FIND DEVICES dobara dabayein.") }
+                p2pChannel = null
+                p2pSocketReady = false
+            }
             if (p2pReceiver == null) {
                 p2pReceiver = object : BroadcastReceiver() {
                     override fun onReceive(context: Context, intent: Intent) {
                         when (intent.action) {
                             WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
-                                p2pManager.requestPeers(p2pChannel) { peers -> renderNearbyPeers(peers) }
+                                p2pChannel?.let { channel -> p2pManager.requestPeers(channel) { peers -> renderNearbyPeers(peers) } }
                             WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION ->
-                                p2pManager.requestConnectionInfo(p2pChannel) { info -> handleP2pConnection(info) }
+                                p2pChannel?.let { channel -> p2pManager.requestConnectionInfo(channel) { info -> handleP2pConnection(info) } }
+                            WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
+                                val enabled = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1) == WifiP2pManager.WIFI_P2P_STATE_ENABLED
+                                if (!enabled) runOnUiThread { updateNearbyStatus("Wi-Fi Direct disabled. Wi-Fi ON karein.") }
+                            }
                         }
                     }
                 }
-                val filter = IntentFilter().apply { addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION); addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) }
-                if (Build.VERSION.SDK_INT >= 33) registerReceiver(p2pReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(p2pReceiver, filter)
+                val filter = IntentFilter().apply {
+                    addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+                    addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                    addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+                }
+                if (Build.VERSION.SDK_INT >= 33) registerReceiver(p2pReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                else registerReceiver(p2pReceiver, filter)
             }
+            val channel = p2pChannel ?: run { updateNearbyStatus("Wi-Fi Direct initialize nahi hua. Dobara try karein."); return }
             val list = body.findViewWithTag<LinearLayout>("nearbyPeerList")
-            list?.removeAllViews(); list?.addView(label("Searching for nearby PocketTool devices…"))
-            p2pManager.discoverPeers(p2pChannel, object : WifiP2pManager.ActionListener {
+            list?.removeAllViews()
+            list?.addView(label("Searching… Dono phones par Wi-Fi ON aur PocketTool open rakhein."))
+            updateNearbyStatus("Nearby devices scan ho rahe hain… Dono phones par FIND DEVICES dabayein.")
+            p2pManager.discoverPeers(channel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() { status.text = "Nearby device discovery started" }
-                override fun onFailure(reason: Int) { status.text = "Discovery failed: $reason" }
+                override fun onFailure(reason: Int) {
+                    val reasonText = when (reason) {
+                        WifiP2pManager.BUSY -> "System busy; 10 second baad try karein"
+                        WifiP2pManager.ERROR -> "Wi-Fi Direct error; Wi-Fi toggle karke try karein"
+                        WifiP2pManager.P2P_UNSUPPORTED -> "Phone Wi-Fi Direct support nahi karta"
+                        else -> "Discovery failed: $reason"
+                    }
+                    updateNearbyStatus(reasonText)
+                }
             })
-        } catch (e: Exception) { toast("Wi-Fi Direct unavailable: ${e.message}") }
+        } catch (e: SecurityException) {
+            updateNearbyStatus("Permission missing. App permissions mein Nearby devices allow karein.")
+        } catch (e: Exception) { updateNearbyStatus("Wi-Fi Direct unavailable: ${e.message}") }
     }
 
     private fun renderNearbyPeers(peers: WifiP2pDeviceList) {
-        nearbyPeers.clear(); peers.deviceList.forEach { nearbyPeers[it.deviceAddress] = it }
+        nearbyPeers.clear()
+        peers.deviceList.forEach { nearbyPeers[it.deviceAddress] = it }
         val list = body.findViewWithTag<LinearLayout>("nearbyPeerList") ?: return
         list.removeAllViews()
-        if (nearbyPeers.isEmpty()) { list.addView(label("No devices found yet. Dono phones par PocketTool kholkar FIND DEVICES dabayein.")); return }
+        if (nearbyPeers.isEmpty()) {
+            list.addView(label("Abhi device nahi mila. Dono phones par Wi-Fi ON karein, PocketTool kholen aur FIND DEVICES dabayein."))
+            updateNearbyStatus("Searching… Agar device na mile to dono phones par Wi-Fi OFF/ON karke dobara scan karein.")
+            return
+        }
         nearbyPeers.values.forEach { device ->
             val line = row()
             line.addView(label("${device.deviceName}\n${device.deviceAddress}"), LinearLayout.LayoutParams(0, -2, 1f))
             line.addView(button("CONNECT") { connectNearbyDevice(device) })
             list.addView(line)
         }
+        updateNearbyStatus("${nearbyPeers.size} device mile. Doosre PocketTool phone ko CONNECT karein.")
     }
 
     private fun connectNearbyDevice(device: WifiP2pDevice) {
-        val config = android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
-        val channel = p2pChannel ?: return
-        p2pManager.connect(channel, config, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() { status.text = "Connection request sent to ${device.deviceName}" }
-            override fun onFailure(reason: Int) { toast("Connection failed: $reason") }
-        })
+        try {
+            val config = android.net.wifi.p2p.WifiP2pConfig().apply {
+                deviceAddress = device.deviceAddress
+                groupOwnerIntent = 0
+            }
+            val channel = p2pChannel ?: run { updateNearbyStatus("Pehle FIND DEVICES dabayein."); return }
+            updateNearbyStatus("${device.deviceName} se connection request bhej rahe hain… Doosre phone par invitation ACCEPT karein.")
+            p2pManager.connect(channel, config, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { status.text = "Connection request sent to ${device.deviceName}. Accept prompt on other phone." }
+                override fun onFailure(reason: Int) { updateNearbyStatus("Connection request fail: $reason. Dono phones par dobara scan karein.") }
+            })
+        } catch (e: Exception) { updateNearbyStatus("Connect error: ${e.message}") }
     }
+
+    @Synchronized
     private fun handleP2pConnection(info: WifiP2pInfo) {
         if (!info.groupFormed || info.groupOwnerAddress == null || p2pSocketReady) return
         p2pSocketReady = true
-        updateNearbyStatus("Wi-Fi Direct connected. Preparing file channel…")
+        updateNearbyStatus("Wi-Fi Direct connected. File channel bana rahe hain…")
         Thread {
+            var localServer: ServerSocket? = null
+            var socket: java.net.Socket? = null
             try {
-                val socket = if (info.isGroupOwner) {
-                    val server = ServerSocket(8988); shareServerSocket = server
-                    server.accept().also { server.close(); shareServerSocket = null }
-                } else java.net.Socket(info.groupOwnerAddress, 8988)
+                if (info.isGroupOwner) {
+                    localServer = ServerSocket()
+                    localServer.reuseAddress = true
+                    localServer.bind(java.net.InetSocketAddress(8988))
+                    localServer.soTimeout = 30000
+                    shareServerSocket = localServer
+                    runOnUiThread { updateNearbyStatus("Phone connected. Doosre phone ka file channel wait kar rahe hain…") }
+                    socket = localServer.accept()
+                } else {
+                    val address = info.groupOwnerAddress
+                    var lastError: Exception? = null
+                    for (attempt in 1..30) {
+                        try {
+                            socket = java.net.Socket()
+                            socket!!.tcpNoDelay = true
+                            socket!!.connect(java.net.InetSocketAddress(address, 8988), 1500)
+                            lastError = null
+                            break
+                        } catch (e: Exception) {
+                            lastError = e
+                            try { socket?.close() } catch (_: Exception) {}
+                            socket = null
+                            Thread.sleep(500)
+                        }
+                    }
+                    if (socket == null) throw lastError ?: java.net.SocketTimeoutException("File channel timeout")
+                }
+                socket!!.tcpNoDelay = true
+                socket!!.keepAlive = true
                 shareSocket = socket
-                shareInput = DataInputStream(socket.getInputStream())
-                shareOutput = DataOutputStream(socket.getOutputStream())
-                runOnUiThread { updateNearbyStatus("Connected • Ready to send and receive files") }
+                shareInput = DataInputStream(java.io.BufferedInputStream(socket!!.getInputStream()))
+                shareOutput = DataOutputStream(java.io.BufferedOutputStream(socket!!.getOutputStream()))
+                runOnUiThread { updateNearbyStatus("CONNECTED ✓ Ab SELECT FILE & SEND dabayein. Received files PocketToolReceived folder mein save hongi.") }
                 receiveNearbyFiles()
             } catch (e: Exception) {
                 p2pSocketReady = false
-                runOnUiThread { updateNearbyStatus("Connection ended: ${e.message}") }
+                try { socket?.close() } catch (_: Exception) {}
+                runOnUiThread { updateNearbyStatus("File connection fail: ${e.message}. Disconnect karke dobara CONNECT karein.") }
+            } finally {
+                try { localServer?.close() } catch (_: Exception) {}
+                if (shareServerSocket === localServer) shareServerSocket = null
             }
         }.start()
     }
