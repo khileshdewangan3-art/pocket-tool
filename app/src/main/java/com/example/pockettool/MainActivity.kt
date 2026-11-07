@@ -19,6 +19,10 @@ import android.net.wifi.WifiManager
 import android.net.wifi.p2p.WifiP2pManager
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pDeviceList
+import android.net.wifi.p2p.WifiP2pInfo
+import java.net.ServerSocket
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -40,6 +44,12 @@ class MainActivity : Activity() {
     private var p2pChannel: WifiP2pManager.Channel? = null
     private var p2pReceiver: BroadcastReceiver? = null
     private val nearbyPeers = linkedMapOf<String, WifiP2pDevice>()
+    private val sharePickRequest = 7402
+    private var shareSocket: java.net.Socket? = null
+    private var shareServerSocket: ServerSocket? = null
+    private var shareInput: DataInputStream? = null
+    private var shareOutput: DataOutputStream? = null
+    @Volatile private var p2pSocketReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,6 +115,8 @@ class MainActivity : Activity() {
         nearby.addView(nearbyButtons)
         nearby.addView(label("Dono phones par PocketTool khula hona chahiye. Device discovery aur Wi-Fi Direct connection yahan se shuru hota hai."))
         nearby.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "nearbyPeerList" })
+        nearby.addView(button("SELECT FILE & SEND") { chooseNearbyFile() })
+        nearby.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "nearbyShareStatus" })
         body.addView(nearby)
 
         heading("Wi-Fi network scanner")
@@ -270,12 +282,15 @@ class MainActivity : Activity() {
             if (p2pReceiver == null) {
                 p2pReceiver = object : BroadcastReceiver() {
                     override fun onReceive(context: Context, intent: Intent) {
-                        if (intent.action == WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION) {
-                            p2pManager.requestPeers(p2pChannel) { peers -> renderNearbyPeers(peers) }
+                        when (intent.action) {
+                            WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION ->
+                                p2pManager.requestPeers(p2pChannel) { peers -> renderNearbyPeers(peers) }
+                            WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION ->
+                                p2pManager.requestConnectionInfo(p2pChannel) { info -> handleP2pConnection(info) }
                         }
                     }
                 }
-                val filter = IntentFilter(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                val filter = IntentFilter().apply { addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION); addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) }
                 if (Build.VERSION.SDK_INT >= 33) registerReceiver(p2pReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(p2pReceiver, filter)
             }
             val list = body.findViewWithTag<LinearLayout>("nearbyPeerList")
@@ -308,6 +323,90 @@ class MainActivity : Activity() {
             override fun onFailure(reason: Int) { toast("Connection failed: $reason") }
         })
     }
+    private fun handleP2pConnection(info: WifiP2pInfo) {
+        if (!info.groupFormed || info.groupOwnerAddress == null || p2pSocketReady) return
+        p2pSocketReady = true
+        updateNearbyStatus("Wi-Fi Direct connected. Preparing file channel…")
+        Thread {
+            try {
+                val socket = if (info.isGroupOwner) {
+                    val server = ServerSocket(8988); shareServerSocket = server
+                    server.accept().also { server.close(); shareServerSocket = null }
+                } else java.net.Socket(info.groupOwnerAddress, 8988)
+                shareSocket = socket
+                shareInput = DataInputStream(socket.getInputStream())
+                shareOutput = DataOutputStream(socket.getOutputStream())
+                runOnUiThread { updateNearbyStatus("Connected • Ready to send and receive files") }
+                receiveNearbyFiles()
+            } catch (e: Exception) {
+                p2pSocketReady = false
+                runOnUiThread { updateNearbyStatus("Connection ended: ${e.message}") }
+            }
+        }.start()
+    }
+
+    private fun receiveNearbyFiles() {
+        val input = shareInput ?: return
+        try {
+            while (shareSocket?.isClosed == false) {
+                val name = input.readUTF()
+                val size = input.readLong()
+                if (size < 0L || size > 5L * 1024L * 1024L * 1024L) throw IllegalStateException("Invalid file size")
+                val folder = java.io.File(getExternalFilesDir(null), "PocketToolReceived").apply { mkdirs() }
+                val safeName = java.io.File(name).name
+                var target = java.io.File(folder, safeName)
+                if (target.exists()) target = java.io.File(folder, "${System.currentTimeMillis()}_$safeName")
+                target.outputStream().buffered().use { output ->
+                    val buffer = ByteArray(64 * 1024); var remaining = size
+                    while (remaining > 0) {
+                        val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                        if (count < 0) throw java.io.EOFException("Transfer interrupted")
+                        output.write(buffer, 0, count); remaining -= count
+                    }
+                }
+                runOnUiThread { updateNearbyStatus("Received: ${target.name}\nSaved in PocketToolReceived") }
+            }
+        } catch (e: Exception) {
+            runOnUiThread { updateNearbyStatus("Receive channel closed: ${e.message}") }
+        }
+    }
+
+    private fun chooseNearbyFile() {
+        if (shareSocket?.isConnected != true || shareOutput == null) {
+            toast("Pehle nearby device connect karein"); return
+        }
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply { addCategory(Intent.CATEGORY_OPENABLE); type = "*/*" }
+        startActivityForResult(intent, sharePickRequest)
+    }
+
+    private fun sendNearbyFile(uri: android.net.Uri) {
+        Thread {
+            try {
+                val name = contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && index >= 0) cursor.getString(index) else "shared_file"
+                } ?: "shared_file"
+                val size = contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+                if (size < 0L || size > 5L * 1024L * 1024L * 1024L) throw IllegalStateException("File size unavailable or over 5 GB")
+                val output = shareOutput ?: throw IllegalStateException("Not connected")
+                synchronized(output) {
+                    output.writeUTF(java.io.File(name).name); output.writeLong(size)
+                    contentResolver.openInputStream(uri)?.use { stream ->
+                        val buffer = ByteArray(64 * 1024); var count: Int
+                        while (stream.read(buffer).also { count = it } != -1) if (count > 0) output.write(buffer, 0, count)
+                    } ?: throw IllegalStateException("Cannot read selected file")
+                    output.flush()
+                }
+                runOnUiThread { updateNearbyStatus("Sent: $name") }
+            } catch (e: Exception) { runOnUiThread { updateNearbyStatus("Send failed: ${e.message}") } }
+        }.start()
+    }
+
+    private fun updateNearbyStatus(message: String) {
+        val panel = body.findViewWithTag<LinearLayout>("nearbyShareStatus") ?: return
+        panel.removeAllViews(); panel.addView(label(message))
+    }
+
     private fun importPasswordBundle() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
@@ -320,6 +419,7 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated by Android; retained for broad device compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == sharePickRequest && resultCode == RESULT_OK) { data?.data?.let { sendNearbyFile(it) }; return }
         if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
@@ -798,6 +898,9 @@ class MainActivity : Activity() {
         receiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         nsdListeners.forEach { try { nsdManager.stopServiceDiscovery(it) } catch (_: Exception) {} }
         nsdListeners.clear()
+        try { p2pReceiver?.let { unregisterReceiver(it) } } catch (_: Exception) {}
+        try { shareSocket?.close() } catch (_: Exception) {}
+        try { shareServerSocket?.close() } catch (_: Exception) {}
         try { phoneShareServer?.stop() } catch (_: Exception) {}
         phoneShareServer = null
         super.onDestroy()
