@@ -78,8 +78,9 @@ class MainActivity : Activity() {
 
         heading("Wi-Fi network scanner")
         val wc = card()
-        wc.addView(button("SCAN WI-FI") { scanWifi() })
-        wc.addView(label("View SSID, signal, frequency and BSSID. Copy MAC copies the BSSID."))
+        wc.addView(button("MY CONNECTED WI-FI DETAILS") { showConnectedWifi() })
+        wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
+        wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
         status = label("Ready • Offline utility")
@@ -151,6 +152,34 @@ class MainActivity : Activity() {
             })
             if(g!=null) { gatts.add(g); status.text="Connecting to ${device.address}…" }
         } catch (_: Exception) { toast("Connection nahi ho paya; device connectable hona chahiye") }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun showConnectedWifi() {
+        try {
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            val info = wm.connectionInfo
+            val dhcp = wm.dhcpInfo
+            if (info == null || info.networkId == -1 || info.ssid == WifiManager.UNKNOWN_SSID) {
+                details("Connected Wi-Fi", "Phone kisi Wi-Fi network se connected nahi hai. Pehle Settings se Wi-Fi connect karein.")
+                return
+            }
+            fun ip(value: Int): String = "%d.%d.%d.%d".format(value and 255, value shr 8 and 255, value shr 16 and 255, value shr 24 and 255)
+            val freq = info.frequency
+            val channel = when {
+                freq == 2484 -> 14
+                freq in 2412..2472 -> (freq - 2407) / 5
+                freq in 5000..5900 -> (freq - 5000) / 5
+                freq in 5955..7115 -> (freq - 5950) / 5
+                else -> -1
+            }
+            val report = "SSID: ${info.ssid}\nBSSID: ${info.bssid ?: "Unavailable"}\nPhone IP: ${ip(info.ipAddress)}\nRouter/Gateway IP: ${ip(dhcp.gateway)}\nSubnet mask: ${ip(dhcp.netmask)}\nDHCP server: ${ip(dhcp.serverAddress)}\nDNS 1: ${ip(dhcp.dns1)}\nDNS 2: ${ip(dhcp.dns2)}\nLink speed: ${info.linkSpeed} Mbps\nSignal: ${info.rssi} dBm\nFrequency: $freq MHz\nChannel: ${if (channel > 0) channel else "Unavailable"}\nNetwork ID: ${info.networkId}\nSupplicant: ${info.supplicantState}"
+            details("My connected Wi-Fi", report)
+        } catch (_: SecurityException) {
+            toast("Location aur Nearby Wi-Fi permissions allow karein")
+        } catch (_: Exception) {
+            toast("Wi-Fi details read nahi ho paayi")
+        }
     }
 
     private fun scanWifi() {
