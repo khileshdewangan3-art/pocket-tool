@@ -84,6 +84,7 @@ class MainActivity : Activity() {
         })
         wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
+        wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
         wc.addView(label("Router/gateway IP, phone IP, subnet, DNS, link speed, channel, security and nearby network details."))
         wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "wifiList" })
         body.addView(wc)
@@ -156,6 +157,19 @@ class MainActivity : Activity() {
             })
             if(g!=null) { gatts.add(g); status.text="Connecting to ${device.address}…" }
         } catch (_: Exception) { toast("Connection nahi ho paya; device connectable hona chahiye") }
+    }
+
+    private fun showWifiSecurityLab() {
+        val message = "WI-FI SECURITY LAB (EDUCATION)\n\n" +
+            "1. Check your own network security: prefer WPA3-Personal, or WPA2-AES if WPA3 is unavailable.\n\n" +
+            "2. Use a long, unique Wi-Fi passphrase (at least 14-16 characters). Avoid names, phone numbers and common words.\n\n" +
+            "3. Disable WPS if you do not need it. Keep router firmware updated.\n\n" +
+            "4. Change the router admin password from its default. Use a separate password from Wi-Fi.\n\n" +
+            "5. Use a Guest Network for visitors and unknown devices.\n\n" +
+            "6. Review connected devices in your router's official admin page.\n\n" +
+            "7. Learn safely: test only your own router or a network where you have explicit permission.\n\n" +
+            "This lab does not crack passwords, bypass authentication or connect to networks without permission."
+        details("Wi-Fi Security Lab", message)
     }
 
     @Suppress("DEPRECATION")
