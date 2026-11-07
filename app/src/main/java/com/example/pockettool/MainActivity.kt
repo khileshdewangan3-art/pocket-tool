@@ -168,7 +168,11 @@ class MainActivity : Activity() {
                     } catch (_: Exception) { }
                 }
             }.start()
-            details("Wi-Fi File Explorer", "Doosre phone ke browser mein same Wi-Fi par ye link kholo:\n\nhttp://$ip:8765/?token=$pocketToken\n\nFiles app ke PocketShare folder mein rahengi. Upload limit 20 MB. Kaam hone par STOP dabayein.")
+            details("Wi-Fi File Explorer", "Doosre phone ke browser mein same Wi-Fi par ye link kholo:
+
+http://$ip:8765/?token=$pocketToken
+
+Files app ke PocketShare folder mein rahengi. Upload limit 20 MB. Kaam hone par STOP dabayein.")
             status.text = "Wi-Fi File Explorer running"
         } catch (e: Exception) { toast("Server start failed: ${e.message}"); stopPocketShareServer() }
     }
@@ -205,7 +209,8 @@ class MainActivity : Activity() {
                     val html = "<meta name=viewport content=width=device-width><h2>PocketTool File Explorer</h2><ul>$names</ul><p>Upload (max 20 MB):</p><form method=post enctype=multipart/form-data><input type=file name=file><button>Upload</button></form><p>Download/upload listing refresh after upload.</p>"
                     sendPocketResponse(output,200,"OK",html,"text/html; charset=utf-8")
                 } else if (bits[0] == "GET" && path == "/files") {
-                    val listing = folder.listFiles()?.filter { it.isFile }?.joinToString("\n") { it.name } ?: ""
+                    val listing = folder.listFiles()?.filter { it.isFile }?.joinToString("
+") { it.name } ?: ""
                     sendPocketResponse(output,200,"OK",listing,"text/plain")
                 } else { sendPocketResponse(output,404,"Not Found","Use the file listing page","text/plain") }
             } catch (_: Exception) { }
@@ -214,7 +219,12 @@ class MainActivity : Activity() {
 
     private fun sendPocketResponse(out: java.io.OutputStream, code: Int, statusText: String, text: String, mime: String) {
         val bytes = text.toByteArray(Charsets.UTF_8)
-        out.write("HTTP/1.1 $code $statusText\r\nContent-Type: $mime\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\n\r\n".toByteArray())
+        out.write("HTTP/1.1 $code $statusText\r
+Content-Type: $mime\r
+Content-Length: ${bytes.size}\r
+Connection: close\r
+\r
+".toByteArray())
         out.write(bytes)
     }
 
@@ -230,7 +240,13 @@ class MainActivity : Activity() {
     @Deprecated("Deprecated by Android; retained for broad device compatibility")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == bluetoothShareRequest && resultCode == RESULT_OK) {\n            val uri = data?.data ?: return\n            val share = Intent(Intent.ACTION_SEND).apply { type = contentResolver.getType(uri) ?: "*/*"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }\n            startActivity(Intent.createChooser(share, "Bluetooth / Share file"))\n            return\n        }\n        if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
+        if (requestCode == bluetoothShareRequest && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
+            val share = Intent(Intent.ACTION_SEND).apply { type = contentResolver.getType(uri) ?: "*/*"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            startActivity(Intent.createChooser(share, "Bluetooth / Share file"))
+            return
+        }
+        if (requestCode != passwordBundleRequest || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
             val loaded = linkedSetOf<String>()
@@ -245,7 +261,10 @@ class MainActivity : Activity() {
             } ?: throw IllegalStateException("File read nahi ho paayi")
             importedPasswords = loaded
             status.text = "Password bundle loaded • ${loaded.size} unique entries"
-            details("Password Bundle Imported", "Entries loaded: ${loaded.size}\nMaximum: 50,000 lines / 2 MB\n\nThe list stays in app memory only. It is not uploaded and is cleared when the app process closes. Use only your own password list.")
+            details("Password Bundle Imported", "Entries loaded: ${loaded.size}
+Maximum: 50,000 lines / 2 MB
+
+The list stays in app memory only. It is not uploaded and is cleared when the app process closes. Use only your own password list.")
         } catch (e: Exception) {
             toast("TXT file read nahi hui: ${e.message ?: "unknown error"}")
         }
@@ -304,7 +323,12 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         if (dialog.isShowing) dialog.dismiss()
                         details("Simulation Complete",
-                            "Entries checked locally: $tested / ${entries.size}\nResult: ${if (foundAt >= 0) "MATCH FOUND" else "NO MATCH"}\n\n${if (foundAt >= 0) "This test password exists in your imported bundle. Do not use it." else "No exact match in this list. This does not prove the password is secure."}\n\nSIMULATION ONLY • No Wi-Fi packets sent • No router login attempts.")
+                            "Entries checked locally: $tested / ${entries.size}
+Result: ${if (foundAt >= 0) "MATCH FOUND" else "NO MATCH"}
+
+${if (foundAt >= 0) "This test password exists in your imported bundle. Do not use it." else "No exact match in this list. This does not prove the password is secure."}
+
+SIMULATION ONLY • No Wi-Fi packets sent • No router login attempts.")
                     }
                 }.start()
             }.show()
@@ -327,8 +351,14 @@ class MainActivity : Activity() {
                 val candidate = input.text.toString()
                 val found = importedPasswords.contains(candidate)
                 details("Offline Bundle Check",
-                    if (found) "MATCH FOUND\n\nYe password tumhari imported list mein maujood hai. Is password ko use na karein; ek unique passphrase banayein."
-                    else "NO EXACT MATCH\n\nYe password imported list mein exact match nahi hua. Iska matlab password guaranteed secure nahi hai; length, uniqueness aur reuse bhi matter karte hain.\n\nNo network or router was contacted.")
+                    if (found) "MATCH FOUND
+
+Ye password tumhari imported list mein maujood hai. Is password ko use na karein; ek unique passphrase banayein."
+                    else "NO EXACT MATCH
+
+Ye password imported list mein exact match nahi hua. Iska matlab password guaranteed secure nahi hai; length, uniqueness aur reuse bhi matter karte hain.
+
+No network or router was contacted.")
             }.show()
     }
 
@@ -351,8 +381,18 @@ class MainActivity : Activity() {
             findings.add("• WPA3-Personal prefer karein; warna WPA2-AES use karein.")
             findings.add("• WPS disable, firmware update aur guest network review karein.")
             details("My Network Security Audit",
-                "Connected SSID: ${info.ssid}\nPhone IP: ${ip(info.ipAddress)}\nRouter IP: ${if (dhcp.gateway != 0) ip(dhcp.gateway) else "Unavailable"}\nSignal: ${info.rssi} dBm\nFrequency: ${info.frequency} MHz\n\nSecurity review:\n" + findings.joinToString("\n") +
-                "\n\nNote: Android does not expose the router's full security configuration here. Verify encryption and WPS in your router admin settings.")
+                "Connected SSID: ${info.ssid}
+Phone IP: ${ip(info.ipAddress)}
+Router IP: ${if (dhcp.gateway != 0) ip(dhcp.gateway) else "Unavailable"}
+Signal: ${info.rssi} dBm
+Frequency: ${info.frequency} MHz
+
+Security review:
+" + findings.joinToString("
+") +
+                "
+
+Note: Android does not expose the router's full security configuration here. Verify encryption and WPS in your router admin settings.")
         } catch (_: Exception) { toast("Network audit unavailable; Wi-Fi permission check karein.") }
     }
 
@@ -367,7 +407,8 @@ class MainActivity : Activity() {
                 status.text = "DNS lookup running…"
                 Thread {
                     val result = try {
-                        java.net.InetAddress.getAllByName(host).map { it.hostAddress }.distinct().joinToString("\n")
+                        java.net.InetAddress.getAllByName(host).map { it.hostAddress }.distinct().joinToString("
+")
                     } catch (e: Exception) { "Lookup failed: ${e.message ?: "Domain resolve nahi hua"}" }
                     runOnUiThread { details("DNS: $host", result) }
                 }.start()
@@ -388,12 +429,35 @@ class MainActivity : Activity() {
 
     private fun showWebSecurityChecklist() {
         details("Web App Security Checklist",
-            "AUTHORIZED REVIEW ONLY\n\n1. Authentication: MFA, secure password reset and rate limits.\n2. Authorization: verify server-side access checks for every object.\n3. Input handling: validate input and use parameterized queries.\n4. Sessions: Secure, HttpOnly, SameSite cookies; rotate session IDs.\n5. Transport: HTTPS everywhere; renew certificates.\n6. Configuration: remove debug pages, defaults and exposed secrets.\n7. Dependencies: patch vulnerable libraries and frameworks.\n8. Data: minimize collection; encrypt sensitive data at rest.\n9. Logging: record security events without logging passwords/tokens.\n10. Recovery: tested backups and incident response plan.\n\nThis is a manual checklist, not an automated vulnerability scanner.")
+            "AUTHORIZED REVIEW ONLY
+
+1. Authentication: MFA, secure password reset and rate limits.
+2. Authorization: verify server-side access checks for every object.
+3. Input handling: validate input and use parameterized queries.
+4. Sessions: Secure, HttpOnly, SameSite cookies; rotate session IDs.
+5. Transport: HTTPS everywhere; renew certificates.
+6. Configuration: remove debug pages, defaults and exposed secrets.
+7. Dependencies: patch vulnerable libraries and frameworks.
+8. Data: minimize collection; encrypt sensitive data at rest.
+9. Logging: record security events without logging passwords/tokens.
+10. Recovery: tested backups and incident response plan.
+
+This is a manual checklist, not an automated vulnerability scanner.")
     }
 
     private fun showEthicalRoadmap() {
         details("Ethical Hacking Roadmap",
-            "BEGINNER → PRACTICAL\n\n1. Networking: TCP/IP, DNS, HTTP/HTTPS, ports and subnetting.\n2. Linux: terminal, files, permissions and processes.\n3. Programming: Python basics, shell and JavaScript fundamentals.\n4. Web: requests, cookies, sessions, APIs and OWASP Top 10.\n5. Security: threat modelling, authentication and cryptography basics.\n6. Practice only in legal labs: OWASP Juice Shop, PortSwigger Web Security Academy and TryHackMe beginner rooms.\n7. Document scope, evidence, impact and remediation in every report.\n\nNever test public systems without written authorization.")
+            "BEGINNER → PRACTICAL
+
+1. Networking: TCP/IP, DNS, HTTP/HTTPS, ports and subnetting.
+2. Linux: terminal, files, permissions and processes.
+3. Programming: Python basics, shell and JavaScript fundamentals.
+4. Web: requests, cookies, sessions, APIs and OWASP Top 10.
+5. Security: threat modelling, authentication and cryptography basics.
+6. Practice only in legal labs: OWASP Juice Shop, PortSwigger Web Security Academy and TryHackMe beginner rooms.
+7. Document scope, evidence, impact and remediation in every report.
+
+Never test public systems without written authorization.")
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
@@ -461,9 +525,13 @@ class MainActivity : Activity() {
         if (ble.isEmpty()) { list.addView(label("No BLE devices yet. Start scan.")); return }
         ble.values.sortedByDescending { it.rssi }.forEach { result ->
             val d=result.device; val item=card()
-            item.addView(label("${result.scanRecord?.deviceName ?: "Unknown device"}\n${d.address} • ${result.rssi} dBm"))
+            item.addView(label("${result.scanRecord?.deviceName ?: "Unknown device"}
+${d.address} • ${result.rssi} dBm"))
             val actions=row()
-            actions.addView(button("DETAILS") { details("BLE device","Name: ${result.scanRecord?.deviceName ?: "Unknown"}\nMAC: ${d.address}\nSignal: ${result.rssi} dBm\nConnectable: ${result.isConnectable}") },weight())
+            actions.addView(button("DETAILS") { details("BLE device","Name: ${result.scanRecord?.deviceName ?: "Unknown"}
+MAC: ${d.address}
+Signal: ${result.rssi} dBm
+Connectable: ${result.isConnectable}") },weight())
             actions.addView(button("COPY MAC") { copy(d.address) },weight())
             actions.addView(button("CONNECT") { connect(d) },weight())
             item.addView(actions); list.addView(item)
@@ -531,7 +599,16 @@ class MainActivity : Activity() {
         if (variety < 3) tips.add("Upper/lowercase, numbers aur symbols ka mix rakhein.")
         if (common.contains(value.lowercase()) || sequential || repeated) tips.add("Common, sequential ya repeated pattern hataayein.")
         if (tips.isEmpty()) tips.add("Is password ko doosri services par reuse na karein.")
-        return "Target: $target\\nStrength estimate: $grade\\nLength: $length characters\\nCharacter groups: $variety of 4\\n\\nSuggestions:\\n• " + tips.joinToString("\\n• ") + "\\n\\nNote: This is an offline heuristic, not a guarantee against cracking. Bluetooth devices use different pairing methods; Android apps cannot safely or generally automate PIN guesses against them."
+        return "Target: $target\
+Strength estimate: $grade\
+Length: $length characters\
+Character groups: $variety of 4\
+\
+Suggestions:\
+• " + tips.joinToString("\
+• ") + "\
+\
+Note: This is an offline heuristic, not a guarantee against cracking. Bluetooth devices use different pairing methods; Android apps cannot safely or generally automate PIN guesses against them."
     }
 
     private fun showPasswordGuessDemo() {
@@ -555,7 +632,9 @@ class MainActivity : Activity() {
                     seconds < 31557600 -> "%.1f days".format(seconds / 86400)
                     else -> "%.1f years".format(seconds / 31557600)
                 }
-                output.text = "Possible combinations: $combinations\\nAt hypothetical 1,000,000 guesses/sec: $time\\nAverage search: about half this time. Real systems add rate limits and cryptographic protections."
+                output.text = "Possible combinations: $combinations\
+At hypothetical 1,000,000 guesses/sec: $time\
+Average search: about half this time. Real systems add rate limits and cryptographic protections."
             }
             override fun onStartTrackingTouch(seek: SeekBar?) {}
             override fun onStopTrackingTouch(seek: SeekBar?) {}
@@ -566,13 +645,20 @@ class MainActivity : Activity() {
     private fun showWifiAnalyzer() {
         val networks = try { (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager).scanResults } catch (_: Exception) { emptyList<WifiResult>() }
         if (networks.isEmpty()) { details("Wi-Fi Analyzer", "Pehle SCAN NEARBY WI-FI chalayein. Android scan limits apply."); return }
-        val report = networks.groupBy { it.frequency }.entries.sortedBy { it.key }.joinToString("\\n") { (freq, entries) ->
+        val report = networks.groupBy { it.frequency }.entries.sortedBy { it.key }.joinToString("\
+") { (freq, entries) ->
             val avg = entries.map { it.level }.average().toInt()
             val band = if (freq < 2500) "2.4 GHz" else if (freq < 5900) "5 GHz" else "6 GHz"
             "$freq MHz ($band): ${entries.size} network(s), average signal $avg dBm"
         }
         val strongest = networks.maxByOrNull { it.level }
-        details("Wi-Fi Analyzer", "Networks found: ${networks.size}\\nStrongest: ${strongest?.SSID ?: "Hidden"} (${strongest?.level} dBm)\\n\\nChannel/frequency overview:\\n$report\\n\\nTip: 2.4 GHz channels 1, 6, 11 are commonly preferred when choosing a less crowded channel.")
+        details("Wi-Fi Analyzer", "Networks found: ${networks.size}\
+Strongest: ${strongest?.SSID ?: "Hidden"} (${strongest?.level} dBm)\
+\
+Channel/frequency overview:\
+$report\
+\
+Tip: 2.4 GHz channels 1, 6, 11 are commonly preferred when choosing a less crowded channel.")
     }
 
     @Suppress("DEPRECATION")
@@ -582,16 +668,36 @@ class MainActivity : Activity() {
             val info = wm.connectionInfo
             val dhcp = wm.dhcpInfo
             val connected = info != null && info.networkId != -1
-            details("Network Diagnostics", "Wi-Fi connected: $connected\\nSSID: ${info?.ssid ?: "Unavailable"}\\nPhone IP: ${info?.ipAddress?.let { "%d.%d.%d.%d".format(it and 255, it shr 8 and 255, it shr 16 and 255, it shr 24 and 255) } ?: "Unavailable"}\\nGateway: ${dhcp?.gateway ?: 0} (integer form)\\nDNS 1: ${dhcp?.dns1 ?: 0}\\nDNS 2: ${dhcp?.dns2 ?: 0}\\n\\nFor full readable IP details use MY CONNECTED WI-FI DETAILS.")
+            details("Network Diagnostics", "Wi-Fi connected: $connected\
+SSID: ${info?.ssid ?: "Unavailable"}\
+Phone IP: ${info?.ipAddress?.let { "%d.%d.%d.%d".format(it and 255, it shr 8 and 255, it shr 16 and 255, it shr 24 and 255) } ?: "Unavailable"}\
+Gateway: ${dhcp?.gateway ?: 0} (integer form)\
+DNS 1: ${dhcp?.dns1 ?: 0}\
+DNS 2: ${dhcp?.dns2 ?: 0}\
+\
+For full readable IP details use MY CONNECTED WI-FI DETAILS.")
         } catch (_: Exception) { toast("Diagnostics unavailable; check permissions.") }
     }
 
     private fun showBleGuide() {
-        details("BLE GATT Explorer", "1. Start Bluetooth LE scan.\\n2. Select a connectable device and tap CONNECT.\\n3. GATT services and characteristics can be inspected on supported devices.\\n\\nOnly inspect devices you own or have permission to test. Some devices require pairing or an app-specific protocol.")
+        details("BLE GATT Explorer", "1. Start Bluetooth LE scan.\
+2. Select a connectable device and tap CONNECT.\
+3. GATT services and characteristics can be inspected on supported devices.\
+\
+Only inspect devices you own or have permission to test. Some devices require pairing or an app-specific protocol.")
     }
 
     private fun showDeviceSecurity() {
-        details("Device Security Check", "Android security checklist:\\n• Keep Android security updates current.\\n• Use a screen lock and biometrics.\\n• Review app permissions in Settings.\\n• Install apps from trusted sources.\\n• Keep Google Play Protect enabled.\\n• Avoid unknown USB debugging connections.\\n• Use Find My Device.\\n\\nThis is an educational checklist, not a malware scan.")
+        details("Device Security Check", "Android security checklist:\
+• Keep Android security updates current.\
+• Use a screen lock and biometrics.\
+• Review app permissions in Settings.\
+• Install apps from trusted sources.\
+• Keep Google Play Protect enabled.\
+• Avoid unknown USB debugging connections.\
+• Use Find My Device.\
+\
+This is an educational checklist, not a malware scan.")
     }
 
     private fun showNfcInfo() {
@@ -604,18 +710,42 @@ class MainActivity : Activity() {
     }
 
     private fun showSubGhzLab() {
-        details("Sub-GHz Radio Learning", "Sub-GHz commonly refers to radio bands below 1 GHz, such as 315, 433, 868 and 915 MHz.\\n\\nLearn these concepts:\\n• Frequency and wavelength\\n• Amplitude/frequency modulation (ASK/OOK/FSK)\\n• Legal regional frequency and power limits\\n• Why rolling codes protect modern remotes\\n\\nMost phones do not contain a Sub-GHz transceiver. This app provides education only; it does not capture, clone or transmit access-control signals.")
+        details("Sub-GHz Radio Learning", "Sub-GHz commonly refers to radio bands below 1 GHz, such as 315, 433, 868 and 915 MHz.\
+\
+Learn these concepts:\
+• Frequency and wavelength\
+• Amplitude/frequency modulation (ASK/OOK/FSK)\
+• Legal regional frequency and power limits\
+• Why rolling codes protect modern remotes\
+\
+Most phones do not contain a Sub-GHz transceiver. This app provides education only; it does not capture, clone or transmit access-control signals.")
     }
 
     private fun showWifiSecurityLab() {
-        val message = "WI-FI SECURITY LAB (EDUCATION)\n\n" +
-            "1. Check your own network security: prefer WPA3-Personal, or WPA2-AES if WPA3 is unavailable.\n\n" +
-            "2. Use a long, unique Wi-Fi passphrase (at least 14-16 characters). Avoid names, phone numbers and common words.\n\n" +
-            "3. Disable WPS if you do not need it. Keep router firmware updated.\n\n" +
-            "4. Change the router admin password from its default. Use a separate password from Wi-Fi.\n\n" +
-            "5. Use a Guest Network for visitors and unknown devices.\n\n" +
-            "6. Review connected devices in your router's official admin page.\n\n" +
-            "7. Learn safely: test only your own router or a network where you have explicit permission.\n\n" +
+        val message = "WI-FI SECURITY LAB (EDUCATION)
+
+" +
+            "1. Check your own network security: prefer WPA3-Personal, or WPA2-AES if WPA3 is unavailable.
+
+" +
+            "2. Use a long, unique Wi-Fi passphrase (at least 14-16 characters). Avoid names, phone numbers and common words.
+
+" +
+            "3. Disable WPS if you do not need it. Keep router firmware updated.
+
+" +
+            "4. Change the router admin password from its default. Use a separate password from Wi-Fi.
+
+" +
+            "5. Use a Guest Network for visitors and unknown devices.
+
+" +
+            "6. Review connected devices in your router's official admin page.
+
+" +
+            "7. Learn safely: test only your own router or a network where you have explicit permission.
+
+" +
             "This lab does not crack passwords, bypass authentication or connect to networks without permission."
         details("Wi-Fi Security Lab", message)
     }
@@ -655,7 +785,20 @@ class MainActivity : Activity() {
                 freq in 5955..7115 -> (freq - 5950) / 5
                 else -> -1
             }
-            val report = "SSID: ${info.ssid}\nBSSID: ${info.bssid ?: "Unavailable"}\nPhone IP: ${ip(info.ipAddress)}\nRouter/Gateway IP: ${ip(dhcp.gateway)}\nSubnet mask: ${ip(dhcp.netmask)}\nDHCP server: ${ip(dhcp.serverAddress)}\nDNS 1: ${ip(dhcp.dns1)}\nDNS 2: ${ip(dhcp.dns2)}\nLink speed: ${info.linkSpeed} Mbps\nSignal: ${info.rssi} dBm\nFrequency: $freq MHz\nChannel: ${if (channel > 0) channel else "Unavailable"}\nNetwork ID: ${info.networkId}\nSupplicant: ${info.supplicantState}"
+            val report = "SSID: ${info.ssid}
+BSSID: ${info.bssid ?: "Unavailable"}
+Phone IP: ${ip(info.ipAddress)}
+Router/Gateway IP: ${ip(dhcp.gateway)}
+Subnet mask: ${ip(dhcp.netmask)}
+DHCP server: ${ip(dhcp.serverAddress)}
+DNS 1: ${ip(dhcp.dns1)}
+DNS 2: ${ip(dhcp.dns2)}
+Link speed: ${info.linkSpeed} Mbps
+Signal: ${info.rssi} dBm
+Frequency: $freq MHz
+Channel: ${if (channel > 0) channel else "Unavailable"}
+Network ID: ${info.networkId}
+Supplicant: ${info.supplicantState}"
             details("My connected Wi-Fi", report)
         } catch (_: SecurityException) {
             toast("Location aur Nearby Wi-Fi permissions allow karein")
@@ -688,9 +831,15 @@ class MainActivity : Activity() {
         if(networks.isEmpty()) { list.addView(label("No networks found. Wi-Fi aur Location ON karke dobara scan karein.")); return }
         networks.sortedByDescending { it.level }.forEach { n ->
             val item=card()
-            item.addView(label("${n.SSID.ifEmpty { "(Hidden network)" }}\n${n.level} dBm • ${n.frequency} MHz\nBSSID: ${n.BSSID}"))
+            item.addView(label("${n.SSID.ifEmpty { "(Hidden network)" }}
+${n.level} dBm • ${n.frequency} MHz
+BSSID: ${n.BSSID}"))
             val actions=row()
-            actions.addView(button("DETAILS") { details("Wi-Fi network","SSID: ${n.SSID}\nBSSID: ${n.BSSID}\nSignal: ${n.level} dBm\nFrequency: ${n.frequency} MHz\nCapabilities: ${n.capabilities}") },weight())
+            actions.addView(button("DETAILS") { details("Wi-Fi network","SSID: ${n.SSID}
+BSSID: ${n.BSSID}
+Signal: ${n.level} dBm
+Frequency: ${n.frequency} MHz
+Capabilities: ${n.capabilities}") },weight())
             actions.addView(button("COPY MAC") { copy(n.BSSID ?: "") },weight())
             item.addView(actions); list.addView(item)
         }
@@ -702,7 +851,8 @@ class MainActivity : Activity() {
     }
     private fun details(title: String, message: String) { android.app.AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("OK",null).show() }
     private fun toast(s: String) = Toast.makeText(this,s,Toast.LENGTH_SHORT).show()
-    override fun onDestroy() {\n        stopPocketShareServer()
+    override fun onDestroy() {
+        stopPocketShareServer()
         if(scanning) try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.bluetoothLeScanner?.stopScan(callback) } catch (_: Exception) {}
         gatts.forEach { try { it.close() } catch (_: Exception) {} }
         receiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
