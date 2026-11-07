@@ -41,13 +41,22 @@ class MainActivity : Activity() {
         }
         requestPermissions(permissions.toTypedArray(), 10)
         val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(245,247,250)) }
-        page.addView(TextView(this).apply {
-            text = "PocketTool 2.0\nSmart device utilities"; textSize = 23f
-            setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE); setPadding(22,22,22,22)
-            setBackgroundColor(Color.rgb(24,35,55))
+        page.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(Color.rgb(17, 42, 76), Color.rgb(31, 105, 170))).apply { cornerRadius = dp(0).toFloat() }
+            addView(TextView(this@MainActivity).apply {
+                text = "PocketTool"; textSize = 26f; setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+            })
+            addView(TextView(this@MainActivity).apply {
+                text = "SMART DEVICE UTILITIES  •  VERSION 2.1"; textSize = 10f
+                setTextColor(Color.rgb(220, 235, 250)); setPadding(0, dp(3), 0, 0)
+            })
         })
         val scroll = ScrollView(this)
-        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(16,14,16,20) }
+        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16),dp(10),dp(16),dp(22)) }
         scroll.addView(body); page.addView(scroll); setContentView(page)
 
         heading("Infrared remote • NEC")
@@ -108,20 +117,37 @@ class MainActivity : Activity() {
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
-    private fun weight() = LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(4) }
+    private fun weight() = LinearLayout.LayoutParams(0, dp(44), 1f).apply { marginEnd = dp(5); bottomMargin = dp(5) }
     private fun row() = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-    private fun heading(s: String) { body.addView(TextView(this).apply {
-        text=s; textSize=17f; setTypeface(null,Typeface.BOLD); setTextColor(Color.rgb(28,39,58)); setPadding(3,16,3,8)
-    }) }
-    private fun card() = LinearLayout(this).apply {
-        orientation=LinearLayout.VERTICAL; setPadding(dp(14),dp(12),dp(14),dp(14))
-        background=GradientDrawable().apply { setColor(Color.WHITE); cornerRadius=dp(14).toFloat(); setStroke(dp(1),Color.rgb(225,230,237)) }
-        elevation=dp(2).toFloat()
+    private fun heading(s: String) {
+        body.addView(TextView(this).apply {
+            text = s.uppercase(); textSize = 13f; letterSpacing = 0.06f
+            setTypeface(null, Typeface.BOLD); setTextColor(Color.rgb(35, 73, 112))
+            setPadding(dp(3), dp(18), dp(3), dp(9))
+        })
     }
-    private fun label(s: String) = TextView(this).apply { text=s; textSize=12f; setTextColor(Color.DKGRAY); setPadding(5,8,5,8) }
+    private fun card() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(13), dp(12), dp(13), dp(12))
+        background = GradientDrawable().apply {
+            setColor(Color.WHITE); cornerRadius = dp(16).toFloat()
+            setStroke(dp(1), Color.rgb(226, 233, 241))
+        }
+        elevation = dp(2).toFloat()
+        layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(7) }
+    }
+    private fun label(s: String) = TextView(this).apply {
+        text = s; textSize = 12f; setTextColor(Color.rgb(86, 99, 116))
+        setPadding(dp(4), dp(6), dp(4), dp(6)); setLineSpacing(dp(2).toFloat(), 1f)
+    }
     private fun button(s: String, action: () -> Unit) = Button(this).apply {
-        text=s; textSize=11f; isAllCaps=false; setTextColor(Color.WHITE)
-        backgroundTintList=android.content.res.ColorStateList.valueOf(Color.rgb(35,104,190))
+        text = s; textSize = 10f; letterSpacing = 0.01f; isAllCaps = false
+        setTypeface(null, Typeface.BOLD); setTextColor(Color.WHITE)
+        minHeight = dp(42); minimumHeight = dp(42); setPadding(dp(10), 0, dp(10), 0)
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(35, 104, 190)); cornerRadius = dp(10).toFloat()
+        }
+        stateListAnimator = null
         setOnClickListener { action() }
     }
     private fun sendIr(cmdText: String) {
