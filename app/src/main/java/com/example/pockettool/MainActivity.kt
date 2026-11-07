@@ -16,6 +16,9 @@ import android.graphics.drawable.GradientDrawable
 import android.hardware.ConsumerIrManager
 import android.net.wifi.ScanResult as WifiResult
 import android.net.wifi.WifiManager
+import android.net.wifi.p2p.WifiP2pManager
+import android.net.wifi.p2p.WifiP2pDevice
+import android.net.wifi.p2p.WifiP2pDeviceList
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -33,6 +36,10 @@ class MainActivity : Activity() {
     private var receiver: BroadcastReceiver? = null
     private var importedPasswords: Set<String> = emptySet()
     private val passwordBundleRequest = 7401
+    private lateinit var p2pManager: WifiP2pManager
+    private var p2pChannel: WifiP2pManager.Channel? = null
+    private var p2pReceiver: BroadcastReceiver? = null
+    private val nearbyPeers = linkedMapOf<String, WifiP2pDevice>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +94,17 @@ class MainActivity : Activity() {
         bc.addView(br); bc.addView(label("Connect tries a BLE GATT connection; some devices do not accept connections."))
         bc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "bleList" })
         body.addView(bc)
+
+        heading("PocketTool Nearby Share")
+        val nearby = card()
+        nearby.addView(label("PHONE-TO-PHONE • NO URL • NO INTERNET"))
+        val nearbyButtons = row()
+        nearbyButtons.addView(button("FIND DEVICES") { discoverNearbyDevices() }, weight())
+        nearbyButtons.addView(button("HOW TO CONNECT") { details("Nearby Share", "Dono phones par PocketTool kholen. Wi-Fi ON rakhein. FIND DEVICES dabayein, phir device ke saamne CONNECT karein. Bluetooth LE scan file transfer nahi karta; Wi-Fi Direct local transfer ke liye use hota hai.") }, weight())
+        nearby.addView(nearbyButtons)
+        nearby.addView(label("Dono phones par PocketTool khula hona chahiye. Device discovery aur Wi-Fi Direct connection yahan se shuru hota hai."))
+        nearby.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "nearbyPeerList" })
+        body.addView(nearby)
 
         heading("Wi-Fi network scanner")
         val wc = card()
@@ -244,6 +262,51 @@ class MainActivity : Activity() {
         status.text = "Found ${discoveredServices.size} shared file service(s)"
     }
 
+    private fun discoverNearbyDevices() {
+        try {
+            p2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
+            p2pChannel = p2pManager.initialize(this, mainLooper, null)
+            if (p2pReceiver == null) {
+                p2pReceiver = object : BroadcastReceiver() {
+                    override fun onReceive(context: Context, intent: Intent) {
+                        if (intent.action == WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION) {
+                            p2pManager.requestPeers(p2pChannel) { peers -> renderNearbyPeers(peers) }
+                        }
+                    }
+                }
+                val filter = IntentFilter(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+                if (Build.VERSION.SDK_INT >= 33) registerReceiver(p2pReceiver, filter, Context.RECEIVER_NOT_EXPORTED) else registerReceiver(p2pReceiver, filter)
+            }
+            val list = body.findViewWithTag<LinearLayout>("nearbyPeerList")
+            list?.removeAllViews(); list?.addView(label("Searching for nearby PocketTool devices…"))
+            p2pManager.discoverPeers(p2pChannel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() { status.text = "Nearby device discovery started" }
+                override fun onFailure(reason: Int) { status.text = "Discovery failed: $reason" }
+            })
+        } catch (e: Exception) { toast("Wi-Fi Direct unavailable: ${e.message}") }
+    }
+
+    private fun renderNearbyPeers(peers: WifiP2pDeviceList) {
+        nearbyPeers.clear(); peers.deviceList.forEach { nearbyPeers[it.deviceAddress] = it }
+        val list = body.findViewWithTag<LinearLayout>("nearbyPeerList") ?: return
+        list.removeAllViews()
+        if (nearbyPeers.isEmpty()) { list.addView(label("No devices found yet. Dono phones par PocketTool kholkar FIND DEVICES dabayein.")); return }
+        nearbyPeers.values.forEach { device ->
+            val line = row()
+            line.addView(label("${device.deviceName}\n${device.deviceAddress}"), LinearLayout.LayoutParams(0, -2, 1f))
+            line.addView(button("CONNECT") { connectNearbyDevice(device) })
+            list.addView(line)
+        }
+    }
+
+    private fun connectNearbyDevice(device: WifiP2pDevice) {
+        val config = android.net.wifi.p2p.WifiP2pConfig().apply { deviceAddress = device.deviceAddress }
+        val channel = p2pChannel ?: return
+        p2pManager.connect(channel, config, object : WifiP2pManager.ActionListener {
+            override fun onSuccess() { status.text = "Connection request sent to ${device.deviceName}" }
+            override fun onFailure(reason: Int) { toast("Connection failed: $reason") }
+        })
+    }
     private fun importPasswordBundle() {
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
