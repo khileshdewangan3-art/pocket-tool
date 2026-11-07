@@ -499,7 +499,12 @@ class MainActivity : Activity() {
                 runOnUiThread { updateNearbyStatus("Received: ${target.name}\nSaved in PocketToolReceived") }
             }
         } catch (e: Exception) {
-            runOnUiThread { updateNearbyStatus("Receive channel closed: ${e.message}") }
+            p2pSocketReady = false
+            try { shareSocket?.close() } catch (_: Exception) {}
+            shareSocket = null
+            shareInput = null
+            shareOutput = null
+            runOnUiThread { updateNearbyStatus("Receive channel closed: ${e.message}. Dono phones par dobara FIND DEVICES karein.") }
         }
     }
 
