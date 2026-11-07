@@ -112,8 +112,82 @@ class MainActivity : Activity() {
         tools.addView(button("OPEN NFC SETTINGS") { startActivity(Intent(android.provider.Settings.ACTION_NFC_SETTINGS)) })
         tools.addView(label("NFC reading needs NFC hardware. Sub-GHz tools are educational only; phone hardware may not support radio transmission."))
         body.addView(tools)
+        heading("Ethical Hacker Lab • Authorized testing")
+        val ethical = card()
+        ethical.addView(button("SECURITY AUDIT • MY WI-FI") { showMyNetworkAudit() })
+        ethical.addView(button("DNS LOOKUP • DOMAIN RECON") { showDnsLookup() })
+        ethical.addView(button("SHA-256 HASH LAB") { showHashLab() })
+        ethical.addView(button("WEB APP SECURITY CHECKLIST") { showWebSecurityChecklist() })
+        ethical.addView(button("ETHICAL HACKING ROADMAP") { showEthicalRoadmap() })
+        ethical.addView(label("Safe learning tools: own devices, own network and explicitly authorized systems only. No password cracking, stealth scanning or exploitation."))
+        body.addView(ethical)
+
         status = label("Ready • Offline utility")
         body.addView(status)
+    }
+
+    private fun showMyNetworkAudit() {
+        try {
+            @Suppress("DEPRECATION")
+            val wm = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            @Suppress("DEPRECATION")
+            val info = wm.connectionInfo
+            val dhcp = wm.dhcpInfo
+            if (info == null || info.networkId == -1) {
+                details("My Network Security Audit", "Wi-Fi connected nahi hai. Apne Wi-Fi se connect karke dobara check karein.")
+                return
+            }
+            fun ip(v: Int) = "%d.%d.%d.%d".format(v and 255, v shr 8 and 255, v shr 16 and 255, v shr 24 and 255)
+            val findings = mutableListOf<String>()
+            if (info.rssi < -70) findings.add("• Signal weak hai; router placement check karein.")
+            if (dhcp.gateway == 0) findings.add("• Gateway details unavailable.")
+            findings.add("• Router admin password default se alag rakhein.")
+            findings.add("• WPA3-Personal prefer karein; warna WPA2-AES use karein.")
+            findings.add("• WPS disable, firmware update aur guest network review karein.")
+            details("My Network Security Audit",
+                "Connected SSID: ${info.ssid}\nPhone IP: ${ip(info.ipAddress)}\nRouter IP: ${if (dhcp.gateway != 0) ip(dhcp.gateway) else "Unavailable"}\nSignal: ${info.rssi} dBm\nFrequency: ${info.frequency} MHz\n\nSecurity review:\n" + findings.joinToString("\n") +
+                "\n\nNote: Android does not expose the router's full security configuration here. Verify encryption and WPS in your router admin settings.")
+        } catch (_: Exception) { toast("Network audit unavailable; Wi-Fi permission check karein.") }
+    }
+
+    private fun showDnsLookup() {
+        val input = EditText(this).apply { hint = "example.com"; setSingleLine(true) }
+        android.app.AlertDialog.Builder(this).setTitle("DNS Lookup")
+            .setMessage("Domain ka DNS address resolve karein. Sirf public DNS lookup; no port scan.")
+            .setView(input).setNegativeButton("CANCEL", null)
+            .setPositiveButton("LOOK UP") { _, _ ->
+                val host = input.text.toString().trim().removePrefix("https://").removePrefix("http://").substringBefore("/")
+                if (host.isBlank() || host.contains(" ")) { toast("Valid domain enter karein"); return@setPositiveButton }
+                status.text = "DNS lookup running…"
+                Thread {
+                    val result = try {
+                        java.net.InetAddress.getAllByName(host).map { it.hostAddress }.distinct().joinToString("\n")
+                    } catch (e: Exception) { "Lookup failed: ${e.message ?: "Domain resolve nahi hua"}" }
+                    runOnUiThread { details("DNS: $host", result) }
+                }.start()
+            }.show()
+    }
+
+    private fun showHashLab() {
+        val input = EditText(this).apply { hint = "Text to hash"; minLines = 2 }
+        val panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(18), dp(8), dp(18), 0); addView(label("SHA-256 hash locally on this phone. Do not enter real passwords or secrets.")); addView(input) }
+        android.app.AlertDialog.Builder(this).setTitle("SHA-256 Hash Lab").setView(panel)
+            .setNegativeButton("CANCEL", null).setPositiveButton("GENERATE") { _, _ ->
+                val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(input.text.toString().toByteArray(Charsets.UTF_8))
+                val hash = bytes.joinToString("") { "%02x".format(it) }
+                details("SHA-256 Result", hash)
+                copy(hash)
+            }.show()
+    }
+
+    private fun showWebSecurityChecklist() {
+        details("Web App Security Checklist",
+            "AUTHORIZED REVIEW ONLY\n\n1. Authentication: MFA, secure password reset and rate limits.\n2. Authorization: verify server-side access checks for every object.\n3. Input handling: validate input and use parameterized queries.\n4. Sessions: Secure, HttpOnly, SameSite cookies; rotate session IDs.\n5. Transport: HTTPS everywhere; renew certificates.\n6. Configuration: remove debug pages, defaults and exposed secrets.\n7. Dependencies: patch vulnerable libraries and frameworks.\n8. Data: minimize collection; encrypt sensitive data at rest.\n9. Logging: record security events without logging passwords/tokens.\n10. Recovery: tested backups and incident response plan.\n\nThis is a manual checklist, not an automated vulnerability scanner.")
+    }
+
+    private fun showEthicalRoadmap() {
+        details("Ethical Hacking Roadmap",
+            "BEGINNER → PRACTICAL\n\n1. Networking: TCP/IP, DNS, HTTP/HTTPS, ports and subnetting.\n2. Linux: terminal, files, permissions and processes.\n3. Programming: Python basics, shell and JavaScript fundamentals.\n4. Web: requests, cookies, sessions, APIs and OWASP Top 10.\n5. Security: threat modelling, authentication and cryptography basics.\n6. Practice only in legal labs: OWASP Juice Shop, PortSwigger Web Security Academy and TryHackMe beginner rooms.\n7. Document scope, evidence, impact and remediation in every report.\n\nNever test public systems without written authorization.")
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
