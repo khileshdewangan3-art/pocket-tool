@@ -19,6 +19,7 @@ class PocketShareServer(private val folder: File) : NanoHTTPD(8765) {
             when {
                 session.method == Method.GET && sub == "/" -> page()
                 session.method == Method.GET && sub == "/list" -> listJson()
+                session.method == Method.GET && sub == "/status" -> uploadStatus(session)
                 session.method == Method.GET && sub == "/download" -> download(session.parameters["name"]?.firstOrNull() ?: "")
                 session.method == Method.POST && sub == "/chunk" -> receiveChunk(session)
                 session.method == Method.POST && sub == "/complete" -> completeUpload(session)
@@ -39,7 +40,7 @@ class PocketShareServer(private val folder: File) : NanoHTTPD(8765) {
 <style>body{font:16px system-ui;max-width:760px;margin:24px auto;padding:0 14px;background:#f4f7fb;color:#17243a}section{background:white;padding:16px;border-radius:14px;margin:14px 0}button{padding:10px 14px;background:#1769aa;color:white;border:0;border-radius:8px}li{padding:10px;border-bottom:1px solid #ddd;overflow-wrap:anywhere}a{color:#075ca8}</style>
 <h2>PocketTool • Wi-Fi File Share</h2><section><b>Shared folder:</b> ${folder.name}<p>Upload up to 5 GB in 8 MB packets; packets are joined into one file.</p><input id="pick" type="file"><button onclick="upload()">Upload</button><p id="status">Ready</p><progress id="progress" value="0" max="100"></progress></section>
 <section><h3>Files</h3><ul id="files">Loading…</ul></section>
-<script>async function load(){let r=await fetch('/$token/list');let a=await r.json();document.getElementById('files').innerHTML=a.map(x=>'<li>'+x.name+' ('+x.size+' bytes) — <a href="/$token/download?name='+encodeURIComponent(x.name)+'">Download</a></li>').join('')||'No files yet'}async function upload(){const f=document.getElementById('pick').files[0];if(!f)return;if(f.size>5*1024*1024*1024){alert('Maximum size is 5 GB');return}const id=crypto.randomUUID(),chunk=8*1024*1024,total=Math.ceil(f.size/chunk),s=document.getElementById('status'),p=document.getElementById('progress');try{for(let i=0;i<total;i++){const form=new FormData();form.append('file',f.slice(i*chunk,Math.min(f.size,(i+1)*chunk)),'chunk.bin');const r=await fetch('/$token/chunk?uploadId='+id+'&index='+i+'&total='+total,{method:'POST',body:form});if(!r.ok)throw new Error(await r.text());p.value=(i+1)*100/total;s.textContent='Packet '+(i+1)+' / '+total}const d=await fetch('/$token/complete?uploadId='+id+'&total='+total+'&name='+encodeURIComponent(f.name),{method:'POST'});if(!d.ok)throw new Error(await d.text());s.textContent=await d.text();await load()}catch(e){s.textContent='Upload failed: '+e.message}}load();</script>"""
+<script>async function load(){let r=await fetch('/$token/list');let a=await r.json();document.getElementById('files').innerHTML=a.map(x=>'<li>'+x.name+' ('+x.size+' bytes) — <a href="/$token/download?name='+encodeURIComponent(x.name)+'">Download</a></li>').join('')||'No files yet'}async function upload(){const f=document.getElementById('pick').files[0];if(!f)return;if(f.size>5*1024*1024*1024){alert('Maximum size is 5 GB');return}const chunk=8*1024*1024,total=Math.ceil(f.size/chunk),s=document.getElementById('status'),p=document.getElementById('progress'),key='pt-upload-'+f.name+'-'+f.size+'-'+f.lastModified;let id=localStorage.getItem(key);if(!id){id=crypto.randomUUID();localStorage.setItem(key,id)}try{let sr=await fetch('/$token/status?uploadId='+id+'&total='+total);if(!sr.ok)throw new Error(await sr.text());let state=await sr.json(),done=new Set(state.received);p.value=done.size*100/total;s.textContent='Resuming: '+done.size+' / '+total+' packets already received';for(let i=0;i<total;i++){if(done.has(i))continue;const form=new FormData();form.append('file',f.slice(i*chunk,Math.min(f.size,(i+1)*chunk)),'chunk.bin');const r=await fetch('/$token/chunk?uploadId='+id+'&index='+i+'&total='+total,{method:'POST',body:form});if(!r.ok)throw new Error(await r.text());done.add(i);p.value=done.size*100/total;s.textContent='Uploading: '+done.size+' / '+total+' packets'}const d=await fetch('/$token/complete?uploadId='+id+'&total='+total+'&name='+encodeURIComponent(f.name),{method:'POST'});if(!d.ok)throw new Error(await d.text());localStorage.removeItem(key);s.textContent=await d.text();await load()}catch(e){s.textContent='Paused — '+e.message+'. Re-select the same file and press Upload to resume.'}}load();</script>"""
         return newFixedLengthResponse(Response.Status.OK, "text/html; charset=utf-8", html)
     }
 
@@ -57,6 +58,15 @@ class PocketShareServer(private val folder: File) : NanoHTTPD(8765) {
         val response = newChunkedResponse(Response.Status.OK, "application/octet-stream", f.inputStream())
         response.addHeader("Content-Disposition", "attachment; filename=\"${f.name.replace("\"", "")}\"")
         return response
+    }
+
+    private fun uploadStatus(session: IHTTPSession): Response {
+        val id = session.parameters["uploadId"]?.firstOrNull() ?: return bad("Missing upload id")
+        if (!id.matches(Regex("[a-fA-F0-9-]{36}"))) return bad("Invalid upload id")
+        val total = session.parameters["total"]?.firstOrNull()?.toIntOrNull() ?: return bad("Invalid packet count")
+        if (total !in 1..640) return bad("Invalid packet count")
+        val received = (0 until total).filter { File(partsFolder, "${id}_$it.part").isFile }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", """{"received":[${received.joinToString(",")}]}""")
     }
 
     private fun receiveChunk(session: IHTTPSession): Response {
