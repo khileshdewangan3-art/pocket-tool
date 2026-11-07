@@ -96,6 +96,9 @@ class MainActivity : Activity() {
         })
         wc.addView(button("OPEN ROUTER ADMIN PAGE") { openRouterPage() })
         wc.addView(button("SCAN NEARBY WI-FI") { scanWifi() })
+        wc.addView(button("DISCOVER SHARED FILE SERVERS") { discoverFileServices() })
+        wc.addView(label("Finds FTP / SFTP / SMB services advertised by your own phones and computers on the same Wi-Fi. A device must enable file sharing first."))
+        wc.addView(LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; tag = "fileServiceList" })
         wc.addView(button("WI-FI SECURITY LAB • EDUCATION") { showWifiSecurityLab() })
         wc.addView(button("PASSWORD SECURITY LAB • 1–15 DIGITS") { showPasswordGuessDemo() })
         wc.addView(button("WI-FI PASSWORD AUDIT") { showPasswordAudit("Wi-Fi") })
@@ -131,6 +134,72 @@ class MainActivity : Activity() {
 
         status = label("Ready • Offline utility")
         body.addView(status)
+    }
+
+
+    private val nsdManager by lazy { getSystemService(Context.NSD_SERVICE) as android.net.nsd.NsdManager }
+    private val nsdListeners = mutableListOf<android.net.nsd.NsdManager.DiscoveryListener>()
+    private val discoveredServices = linkedMapOf<String, String>()
+
+    private fun discoverFileServices() {
+        val list = body.findViewWithTag<LinearLayout>("fileServiceList") ?: return
+        list.removeAllViews()
+        discoveredServices.clear()
+        nsdListeners.forEach { try { nsdManager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        nsdListeners.clear()
+        list.addView(label("Searching your local Wi-Fi for advertised FTP / SFTP / SMB shares…"))
+        val types = listOf("_ftp._tcp.", "_sftp-ssh._tcp.", "_smb._tcp.")
+        types.forEach { type ->
+            val listener = object : android.net.nsd.NsdManager.DiscoveryListener {
+                override fun onDiscoveryStarted(serviceType: String) {}
+                override fun onServiceFound(service: android.net.nsd.NsdServiceInfo) {
+                    if (!service.serviceType.contains(type.removeSuffix("."))) return
+                    try {
+                        nsdManager.resolveService(service, object : android.net.nsd.NsdManager.ResolveListener {
+                            override fun onResolveFailed(info: android.net.nsd.NsdServiceInfo, errorCode: Int) {}
+                            override fun onServiceResolved(info: android.net.nsd.NsdServiceInfo) {
+                                val host = info.host?.hostAddress ?: return
+                                val port = info.port
+                                val key = "${info.serviceName} • $host:$port"
+                                runOnUiThread {
+                                    discoveredServices[key] = type
+                                    renderFileServices()
+                                }
+                            }
+                        })
+                    } catch (_: Exception) {}
+                }
+                override fun onServiceLost(service: android.net.nsd.NsdServiceInfo) {}
+                override fun onDiscoveryStopped(serviceType: String) {}
+                override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                    try { nsdManager.stopServiceDiscovery(this) } catch (_: Exception) {}
+                }
+                override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {}
+            }
+            nsdListeners.add(listener)
+            try { nsdManager.discoverServices(type, android.net.nsd.NsdManager.PROTOCOL_DNS_SD, listener) }
+            catch (_: Exception) {}
+        }
+        status.text = "Searching for shared file services on local Wi-Fi…"
+    }
+
+    private fun renderFileServices() {
+        val list = body.findViewWithTag<LinearLayout>("fileServiceList") ?: return
+        list.removeAllViews()
+        if (discoveredServices.isEmpty()) {
+            list.addView(label("No advertised FTP / SFTP / SMB services found yet. Enable file sharing on your own PC/mobile and scan again."))
+            return
+        }
+        discoveredServices.forEach { (endpoint, type) ->
+            val item = card()
+            item.addView(label("$endpoint\nProtocol: ${type.removeSuffix(".").uppercase()}"))
+            item.addView(button("COPY ADDRESS") {
+                val endpointPart = endpoint.substringAfter("•").trim()
+                copy(endpointPart)
+            })
+            list.addView(item)
+        }
+        status.text = "Found ${discoveredServices.size} shared file service(s)"
     }
 
     private fun importPasswordBundle() {
@@ -621,6 +690,8 @@ class MainActivity : Activity() {
         if(scanning) try { (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.bluetoothLeScanner?.stopScan(callback) } catch (_: Exception) {}
         gatts.forEach { try { it.close() } catch (_: Exception) {} }
         receiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        nsdListeners.forEach { try { nsdManager.stopServiceDiscovery(it) } catch (_: Exception) {} }
+        nsdListeners.clear()
         super.onDestroy()
     }
 }
