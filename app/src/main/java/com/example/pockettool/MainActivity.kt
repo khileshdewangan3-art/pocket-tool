@@ -52,8 +52,8 @@ class MainActivity : Activity() {
 
         heading("Infrared remote • NEC")
         val ir = card()
-        address = EditText(this).apply { hint = "NEC address (hex)"; setText("04"); singleLine = true }
-        command = EditText(this).apply { hint = "Command (hex)"; setText("08"); singleLine = true }
+        address = EditText(this).apply { hint = "NEC address (hex)"; setText("04"); setSingleLine(true) }
+        command = EditText(this).apply { hint = "Command (hex)"; setText("08"); setSingleLine(true) }
         ir.addView(address); ir.addView(command)
         val irButtons = row()
         irButtons.addView(button("POWER") { sendIr("08") }, weight())
