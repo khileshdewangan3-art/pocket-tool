@@ -326,6 +326,17 @@ class MainActivity : Activity() {
                 startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
                 return
             }
+            // Android Wi-Fi Direct peer discovery requires system Location Mode to be ON,
+            // even when the app uses NEARBY_WIFI_DEVICES instead of location data.
+            val locationMode = android.provider.Settings.Secure.getInt(
+                contentResolver, android.provider.Settings.Secure.LOCATION_MODE,
+                android.provider.Settings.Secure.LOCATION_MODE_OFF
+            )
+            if (locationMode == android.provider.Settings.Secure.LOCATION_MODE_OFF) {
+                updateNearbyStatus("Phone ka Location/GPS OFF hai. Location ON karke phir FIND DEVICES dabayein.")
+                try { startActivity(Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)) } catch (_: Exception) {}
+                return
+            }
             if (Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES), 33)
@@ -376,12 +387,13 @@ class MainActivity : Activity() {
                 override fun onSuccess() { status.text = "Nearby device discovery started" }
                 override fun onFailure(reason: Int) {
                     val reasonText = when (reason) {
-                        WifiP2pManager.BUSY -> "System busy; 10 second baad try karein"
-                        WifiP2pManager.ERROR -> "Wi-Fi Direct error; Wi-Fi toggle karke try karein"
-                        WifiP2pManager.P2P_UNSUPPORTED -> "Phone Wi-Fi Direct support nahi karta"
-                        else -> "Discovery failed: $reason"
+                        WifiP2pManager.BUSY -> "Wi-Fi Direct busy hai. 15 second wait karke dobara try karein."
+                        WifiP2pManager.ERROR -> "System error. Wi-Fi aur Location OFF/ON karke dobara try karein."
+                        WifiP2pManager.P2P_UNSUPPORTED -> "Is phone mein Wi-Fi Direct support nahi hai."
+                        else -> "Device discovery start nahi hua (error $reason). Wi-Fi, Location aur Nearby Devices permission check karein."
                     }
                     updateNearbyStatus(reasonText)
+                    toast(reasonText)
                 }
             })
         } catch (e: SecurityException) {
